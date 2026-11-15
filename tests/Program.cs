@@ -44,7 +44,7 @@ try
         Check(UpdatePolicy.Verify(metadata,signature,rsa.ExportSubjectPublicKeyInfoPem()).Version=="0.2.1","Signed release metadata is accepted");metadata[12]^=1;var rejected=false;try{UpdatePolicy.Verify(metadata,signature,rsa.ExportSubjectPublicKeyInfoPem());}catch(IOException){rejected=true;}Check(rejected,"Tampered update metadata is rejected");
         var unsafePath=false;try{UpdatePolicy.SafeTarget(root,@"..\escape.exe");}catch(IOException){unsafePath=true;}Check(unsafePath,"Update path traversal is rejected");
     }
-    foreach(var blocked in new[]{@"C:\",@"C:\Windows",@"\\server\share",Path.Combine(root,"private")}){var rejected=false;try{Engine.ValidateFolder(blocked,Path.Combine(root,"private"));}catch(ArgumentException){rejected=true;}Check(rejected,"Unsafe sync folder is rejected");}
+    foreach(var blocked in new[]{@"C:\",@"C:\Windows",@"\\server\share",Path.Combine(root,"private"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Afrosoftware","DesksyncUpdateState")}){var rejected=false;try{Engine.ValidateFolder(blocked,Path.Combine(root,"private"));}catch(ArgumentException){rejected=true;}Check(rejected,"Unsafe sync folder is rejected");}
     foreach (var invalid in new[] { "https://evil.test/", "desksync://pair?v=2", "desksync://pair?v=1&device=bad&folder=..", "file:///C:/Windows" })
     {
         var rejected = false; try { Pairing.Parse(invalid); } catch (ArgumentException) { rejected = true; } Check(rejected, "Reject invalid pairing input");

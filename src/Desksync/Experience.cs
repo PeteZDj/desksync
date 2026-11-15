@@ -16,7 +16,7 @@ public sealed partial class Engine
         if(path.StartsWith(@"\\",StringComparison.Ordinal))throw new ArgumentException("Choose a folder on a local drive. Each computer keeps its own mirrored files.");
         var blocked = new[] { Path.GetPathRoot(path)!.TrimEnd('\\'), Environment.GetFolderPath(Environment.SpecialFolder.Windows).TrimEnd('\\'), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('\\') };
         if (blocked.Any(x => string.Equals(path, x, StringComparison.OrdinalIgnoreCase))) throw new ArgumentException("Choose a dedicated folder, such as C:\\Desksync, instead of an entire drive or system folder.");
-        foreach (var protectedPath in new[] { Path.GetFullPath(privateHome).TrimEnd('\\'), Path.GetFullPath(AppContext.BaseDirectory).TrimEnd('\\'),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Afrosoftware","DesksyncDesktop"),@"C:\ProgramData\DesksyncRelease" })
+        foreach (var protectedPath in new[] { Path.GetFullPath(privateHome).TrimEnd('\\'), Path.GetFullPath(AppContext.BaseDirectory).TrimEnd('\\'),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Afrosoftware","DesksyncDesktop"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Afrosoftware","DesksyncUpdateState"),@"C:\ProgramData\DesksyncRelease" })
             if (path.Equals(protectedPath,StringComparison.OrdinalIgnoreCase)||path.StartsWith(protectedPath+'\\',StringComparison.OrdinalIgnoreCase)||protectedPath.StartsWith(path+'\\',StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Keep the sync folder separate from Desksync's application files and private settings.");
         return path;
     }
@@ -36,6 +36,7 @@ public sealed partial class Engine
                 try
                 {
                     if(!Directory.Exists(path)){Directory.CreateDirectory(path);Restrict(path);}
+                    GrantServerFolderAccess(path);
                     if(Directory.Exists(oldPath))CopyTree(oldPath,path);
                     folder["path"]=path;folder["paused"]=wasPaused;await Put("config/folders",folders);
                 }

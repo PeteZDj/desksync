@@ -2,9 +2,11 @@
 
 Your files. Your server. A Windows desktop and server app by Afrosoftware, with encrypted synchronization powered by Syncthing.
 
-[Download Windows setup 0.2.0](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.2.0-win-x64.exe) · [Checksum](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.2.0-win-x64.exe.sha256) · [Software page](https://afrosoftware.com/software/desksync)
+[Download Windows setup 0.2.1](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.2.1-win-x64.exe) · [Checksum](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.2.1-win-x64.exe.sha256) · [Software page](https://afrosoftware.com/software/desksync)
 
 ## What is new in 0.2
+
+Patch 0.2.1 corrects first-time server role selection and grants the sync service access when you move its folder. Updater staging is explicitly excluded from folder choices.
 
 - A redesigned desktop with original Desksync icons, Home, Sync activity, Devices, Notifications and Settings.
 - A first-run wizard: choose **Desktop** or **Server**, select your folder, then connect.

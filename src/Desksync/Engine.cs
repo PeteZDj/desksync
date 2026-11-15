@@ -69,6 +69,12 @@ public sealed partial class Engine : IDisposable
     {
         var temp = Path.Combine(data, "settings.tmp"); File.WriteAllText(temp, JsonSerializer.Serialize(Settings)); File.Move(temp, Path.Combine(data, "settings.json"), true);
     }
+    void GrantServerFolderAccess(string folder)
+    {
+        if(!string.Equals(data.TrimEnd('\\'),@"C:\ProgramData\Desksync",StringComparison.OrdinalIgnoreCase))return;
+        try{var sid=(SecurityIdentifier)new NTAccount(@"NT SERVICE\DesksyncSync").Translate(typeof(SecurityIdentifier));var info=new DirectoryInfo(folder);var acl=info.GetAccessControl();acl.AddAccessRule(new FileSystemAccessRule(sid,FileSystemRights.FullControl,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));info.SetAccessControl(acl);}
+        catch(IdentityNotMappedException){/* First-time setup grants access after creating the service. */}
+    }
     public async Task Initialize(bool ensureFolder = true)
     {
         if (!File.Exists(Binary)) throw new FileNotFoundException("The sync engine is missing. Reinstall Desksync.");
@@ -118,7 +124,7 @@ public sealed partial class Engine : IDisposable
     {
         var info = new ProcessStartInfo(Binary) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = AppContext.BaseDirectory };
         foreach (var arg in args) info.ArgumentList.Add(arg);
-        info.Environment["STVERSIONEXTRA"] = "Desksync 0.2.0"; return info;
+        info.Environment["STVERSIONEXTRA"] = "Desksync "+typeof(Engine).Assembly.GetName().Version!.ToString(3); return info;
     }
     public async Task<JsonNode> Get(string route) => await http.GetFromJsonAsync<JsonNode>(route) ?? throw new IOException("The sync engine returned an empty response.");
     async Task Put(string route, JsonNode value)
@@ -129,6 +135,7 @@ public sealed partial class Engine : IDisposable
     public async Task EnsureFolder()
     {
         if (!Directory.Exists(Settings.Folder)) { Directory.CreateDirectory(Settings.Folder); Restrict(Settings.Folder); }
+        GrantServerFolderAccess(Settings.Folder);
         var folders = await Get("config/folders");
         if (folders.AsArray().Any(f => f!["id"]!.GetValue<string>() == Settings.FolderId)) return;
         if (folders.AsArray().Any(f => string.Equals(Path.GetFullPath(f!["path"]!.GetValue<string>()).TrimEnd('\\'), Path.GetFullPath(Settings.Folder).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)))

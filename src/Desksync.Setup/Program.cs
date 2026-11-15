@@ -7,7 +7,7 @@ sealed class SetupWindow:Form
 {
  readonly Button install=new(){Text="Install Desksync",AutoSize=false,Width=180,Height=43,BackColor=Color.FromArgb(50,107,234),ForeColor=Color.White,FlatStyle=FlatStyle.Flat};
  readonly CheckBox startup=new(){Text="Start in the system tray when I sign in",Checked=true,AutoSize=true};
- readonly Label status=new(){Text="Windows x64 · Includes its .NET runtime · Preview 0.2.0",AutoSize=true,MaximumSize=new Size(500,0),ForeColor=Color.FromArgb(137,151,174)};
+ readonly Label status=new(){Text="Windows x64 · Includes its .NET runtime · Preview 0.2.1",AutoSize=true,MaximumSize=new Size(500,0),ForeColor=Color.FromArgb(137,151,174)};
  string? installed;
  readonly ProgressBar progress=new(){Width=510,Height=5,Style=ProgressBarStyle.Marquee,Visible=false};
  public SetupWindow()

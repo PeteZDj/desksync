@@ -1,0 +1,9 @@
+artifacts/
+**/bin/
+**/obj/
+vendor/syncthing.exe
+.env*
+*.key
+*.pem
+config.xml
+settings.json

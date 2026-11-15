@@ -2,9 +2,12 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
-    <Version>0.1.0</Version><AssemblyName>Desksync</AssemblyName>
+    <Version>0.2.0</Version><AssemblyName>Desksync</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../assets/desksync.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile><SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+  <ItemGroup><PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35"/><EmbeddedResource Include="UI/*"/><Compile Include="../Shared/UpdatePolicy.cs" Link="UpdatePolicy.cs"/><EmbeddedResource Include="../Shared/UpdatePublicKey.pem" LogicalName="Desksync.UpdatePublicKey.pem"/></ItemGroup>
+  <Target Name="UseOnlyWinFormsWebView" BeforeTargets="ResolveAssemblyReferences"><ItemGroup><Reference Remove="@(Reference)" Condition="'%(Reference.FileName)' == 'Microsoft.Web.WebView2.Wpf'" /></ItemGroup></Target>
 </Project>

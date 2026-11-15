@@ -5,5 +5,6 @@ vendor/syncthing.exe
 .env*
 *.key
 *.pem
+!src/Shared/UpdatePublicKey.pem
 config.xml
 settings.json

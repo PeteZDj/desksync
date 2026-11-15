@@ -1,63 +1,102 @@
 # Desksync
 
-Your files. Your server. A Windows tray application and setup program by Afrosoftware.
+Your files. Your server. A Windows desktop and server app by Afrosoftware, with encrypted synchronization powered by Syncthing.
 
-Desksync synchronizes **one explicitly selected folder**, `C:\Desksync` by default, between approved Windows devices. It does not share your entire drive, website roots, repositories, mailbox administration, or other folders automatically.
+[Download Windows setup 0.2.0](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.2.0-win-x64.exe) · [Checksum](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.2.0-win-x64.exe.sha256) · [Software page](https://afrosoftware.com/software/desksync)
 
-## Windows preview 0.1.0
+## What is new in 0.2
 
-[Download Desksync Setup](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.1.0-win-x64.exe) · [SHA-256](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.1.0-win-x64.exe.sha256) · [Software page](https://afrosoftware.com/software/desksync)
+- A redesigned desktop with original Desksync icons, Home, Sync activity, Devices, Notifications and Settings.
+- A first-run wizard: choose **Desktop** or **Server**, select your folder, then connect.
+- **Sign in with Afrosoftware** for our private installation. Google sign-in happens in your regular browser. After explicit approval, both devices connect automatically; no long pairing-code exchange is needed.
+- Your signed-in name and photo appear in the top-right account menu. Desktop tokens are encrypted using Windows DPAPI for the current user. Browser passwords never enter the app.
+- Real file counts, folder bytes, physical disk usage, peer connection status and recent local/received file events. A local edit is labelled as a local change, not falsely claimed to be an upload receipt.
+- The system tray includes open folder, pause/resume, activity, settings, update checks and quit/close controls. File, Edit, View and Help menus provide standard desktop actions.
+- Automatic updates with signed release metadata, archive verification, startup checks and rollback. Updates preserve the sync folder, engine identity and account state.
+- A Windows service component for self-hosted servers. New server setups no longer require NSSM. Existing NSSM-managed installations remain compatible.
 
-The installer includes the .NET runtime and Syncthing. You do not need to install Node.js, .NET, FTP or IIS. This is an **unsigned Windows x64 preview**; Windows may show an unknown-publisher warning. Verify the checksum and obtain it from the official Afrosoftware download. Code signing, automatic app updates, mobile clients and Explorer placeholder files are not included in this release.
+This is an **unsigned Windows x64 preview**. Windows SmartScreen may show an unknown-publisher warning. Signing update metadata is separate from a publicly trusted Windows code-signing certificate; this release does not claim a trusted Windows publisher. Verify your download from the official source.
 
-## Set up your own dedicated server and desktop
+## Upgrade from 0.1
 
-1. Download and install Desksync on a Windows server and your Windows desktop. Windows Server 2025 and Windows 11 x64 are the initial targets. The folder and installation are per machine/user, not a multi-tenant hosting service.
-2. On the server, open Desksync and choose **Copy this device's code**.
-3. On the desktop, choose **Join another folder** and paste the server's code. Joining an existing folder merges its contents with the local folder. Start with an empty desktop folder if you do not want pre-existing local files uploaded.
-4. On the desktop, choose **Copy this device's code**. On the server choose **Approve a device** and paste that code.
-5. Keep both devices running. Wait until both show a connected device and **Up to date**. Create a harmless test file on each side and verify both changes before adding important files.
-6. Choose **Start at sign-in** on a desktop. Closing the window leaves synchronization running in the tray; **Quit Desksync** stops the desktop engine.
+Quit the old tray app and install 0.2 once. Existing files, device certificates and folder identity are preserved. The old 0.1 app did not include an updater, so it cannot install this upgrade automatically. Subsequent releases can update from the 0.2 tray app.
 
-The pairing code contains a device identity and folder ID, not a password or a grant by itself. Both sides must explicitly trust each other. Approving a device grants read, write and delete access to that folder. Verify codes through a trusted channel. Device names are labels, not proof of identity.
+The installer includes the .NET runtime. Microsoft Edge WebView2 is needed for the interface; setup downloads it from Microsoft and checks the Microsoft signature if it is missing. Windows Server 2025 and Windows 11 x64 are the initial targets. There are no Android, iPhone, Linux or macOS desktop releases in this version.
 
-## How synchronization works
+## Our private Afrosoftware installation
 
-- Encrypted peer-to-peer transport uses device certificates. Public discovery/relay services can help devices find and reach each other; a relay cannot read file contents. Discovery infrastructure can observe device/network metadata. Router port mapping is disabled by Desksync. No FTP service or public administration port is required.
-- Files are ordinary files on disk, available offline in File Explorer. This release fully downloads the shared folder. It does not mount an on-demand cloud drive or selectively fetch individual placeholders.
-- Both sides can edit, create, rename and delete. Changes transfer when both sides reconnect. Concurrent edits can produce `.sync-conflict-*` files; compare them yourself before deleting one.
-- Staggered versioning retains remotely replaced/deleted files for up to 30 days in `.stversions`. It does not protect every local edit, an offline folder from loss, or malicious edits everywhere. Keep an independent backup.
-- **Remove device** stops future transfers; it does not revoke copies already on that device. Do not share secrets, active databases, virtual-machine disks or a live Git metadata directory without an application-specific plan.
-- File permissions, owners and Windows ACLs are not a portable backup contract. Test your own workload.
+1. Install Desksync on your Windows desktop.
+2. Choose **This is my desktop**, then choose your local folder (`C:\Desksync` by default).
+3. Choose **Afrosoftware** and **Sign in & connect**.
+4. In your normal browser, sign in with your Afrosoftware account, using Google or an existing verified administrator login. Confirm that the computer name and short request code match, then approve the computer.
+5. Return to Desksync. Your profile appears and the server connection is configured automatically. Keep both devices online for file transfer.
 
-## Unattended Windows server
+This hosted installation is owner-only. Signing in as an unrelated Google user does not grant access to our files. Other users can run their own servers as described below. The desktop sign-in uses a narrowly scoped device authorization flow; this is not a public general-purpose OAuth/OpenID provider for arbitrary third-party applications.
 
-The optional `scripts/install-server.ps1` initializes a private machine-wide engine profile, creates only `C:\Desksync`, and registers the included engine using an existing NSSM installation. Run it elevated with the NSSM path. The service starts at boot, independently of RDP sign-in. Its control API stays on `127.0.0.1:5391`, protected by a private API key and GUI password. Engine keys and API credentials remain under `%ProgramData%\Desksync`; never copy that directory into your synced folder or public downloads.
+## Set up your own cloud or dedicated Windows server
 
-```powershell
-.\scripts\install-server.ps1 -NssmPath C:\tools\nssm.exe
-```
+You do not need an Afrosoftware account, IIS, FTP, Node.js or a paid cloud-storage plan. You need your own Windows server and Windows desktops with storage and network access.
 
-For server UI access, run `Desksync.exe` elevated. It detects the `DesksyncSync` service and uses the machine-wide profile. Closing the server dashboard leaves its service running. Use the service manager to stop the server engine.
+### On the server
 
-Outbound HTTPS/discovery and relay connections must be permitted by your network. Direct transfers usually use TCP/UDP 22000 when reachable; local discovery uses UDP 21027. Firewall/NAT policy may force a relay and reduce performance. Do not expose the loopback administration API. See [Syncthing's firewall guide](https://docs.syncthing.net/users/firewall.html).
+1. Install Desksync and choose **This is my server** in the wizard.
+2. Choose a dedicated shared folder. Only this folder is shared; Desksync does not automatically expose websites, repositories, your profile or the whole drive.
+3. Leave **Run as a Windows service** enabled for an unattended server. Windows will request administrator permission.
+4. Finish setup. Desksync installs the service under the low-privilege LocalService account with a dedicated service SID and private configuration under `C:\ProgramData\Desksync`.
+5. The server dashboard/tray starts when the installing owner signs in. It uses an interactive logon task without storing a password. The sync service continues when the owner signs out; Windows services cannot display a tray icon in a signed-out session.
+6. In **Devices → Connection options**, save the server’s `.desksync` connection file and transfer it to your desktop through a trusted channel.
 
-## Afrosoftware account and privacy
+### On each desktop
 
-The private hosted server console at `https://afrosoftware.com/desksync` uses your existing Afrosoftware account and server-verified Google sign-in. It is owner-only in the initial installation. Desktop file pairing is independent and works on your own server without an Afrosoftware account. This release does **not** claim to be a general-purpose OAuth/OpenID provider; a standards-based shared identity service is a separate component of the product roadmap.
+1. Install Desksync. Choose **This is my desktop**, your local folder, and **My own server**.
+2. Finish the wizard. Under **Server connection**, open the server’s `.desksync` file.
+3. Save this computer’s connection file and open it on the server to approve this desktop. Both sides must approve each other before files transfer.
+4. Verify that both computers show a connected device. Create a harmless file on each side and check both transfers before adding important files.
 
-## Build
+Connection files contain a device identity and folder ID, not a password or access grant by themselves. Verify the device through a trusted channel. Approving a device grants read, write and delete access to the shared folder. Raw codes remain available only in Advanced options for compatibility.
 
-Requirements: Windows x64, .NET 10 SDK, PowerShell 7 and internet access to the official Syncthing release. The build script pins Syncthing 2.1.7 and verifies its archive's SHA-256. No private configuration or production data is packaged.
+### Server administration and storage
+
+- **Settings** shows the folder location, server connection, account, startup behavior, retained versions and updater controls.
+- Changing an existing folder location requires an empty destination. Desksync pauses synchronization, copies the existing files, keeps the originals, then reconfigures the engine. Close applications editing those files first. The preview refuses to relocate junctions/symlinks.
+- The storage meter shows physical disk capacity and available space. Desksync folder bytes are shown separately. It does not invent an account quota or pretend the entire disk is dedicated to Desksync.
+- Server configuration/API keys and app accounts are outside the shared folder. The engine administration API stays on `127.0.0.1:5391`; do not expose it publicly.
+- Desktop configuration stays under `%LocalAppData%\Afrosoftware\Desksync`; account and update state are under `%LocalAppData%\Afrosoftware\DesksyncDesktop`.
+
+## Automatic updates
+
+The tray application checks signed metadata on the official website and published GitHub releases at startup and every four hours while running. Automatic downloads/installations are enabled by default and can be disabled in Settings. You can also choose **Help → Check for updates**. The app shows update state and download progress; it waits for the local sync engine to become idle before an automatic restart.
+
+Before running an update, Desksync verifies signed release metadata with an embedded RSA public key, checks the package size and SHA-256, and rejects unsafe archive paths and non-newer versions. The updater keeps the archive open against modification while verifying and extracting it. Server staging and helper binaries use a protected Program Files location. Sync data, private engine configuration and account tokens are not part of application replacement.
+
+The previous application files are retained for rollback. The new version must complete native-engine and UI startup checks. If startup fails, the updater restores the previous application and blocks automatic retries of that version to prevent a restart loop. Failed downloads or signature checks leave the current version in place. A server dashboard closed or signed out does not check for app updates until it runs again; the background sync service keeps running.
+
+For release maintainers, `scripts/sign-release.ps1` reads a private signing key **outside this repository**. That key must match `src/Shared/UpdatePublicKey.pem`. Never commit or distribute the private key. Fork maintainers must supply their own release key and review the update URL policy if publishing their own distribution.
+
+## How file synchronization works
+
+- Files are ordinary local files in File Explorer, available offline. This release mirrors the complete shared folder. Streaming, virtual-drive placeholders and selective on-demand downloads are not included.
+- Edits, additions, renames and deletions travel both ways when devices reconnect. Concurrent edits can create `.sync-conflict-*` copies; compare and resolve them yourself.
+- Syncthing provides encrypted device-to-device connections. Public discovery and encrypted relays help devices reach each other. Relay operators cannot read file contents but can observe network/device metadata. Router port mapping is disabled by Desksync.
+- Direct connections generally use TCP/UDP 22000; local discovery uses UDP 21027. Outbound discovery/relay traffic must be permitted. No new public FTP or administration port is required. See [Syncthing’s firewall guide](https://docs.syncthing.net/users/firewall.html).
+- Staggered versioning retains remotely replaced/deleted files for up to 30 days in `.stversions`. It does not capture every local edit or replace an independent backup.
+- Removing a device stops future transfers but cannot erase files it already downloaded. Do not synchronize live databases, virtual machines or secrets without an application-specific plan.
+
+## Build and test
+
+Requirements: Windows x64, .NET 10 SDK, PowerShell 7, and internet access for official dependencies.
 
 ```powershell
 .\scripts\fetch-engine.ps1
-dotnet run --project tests\Desksync.Tests.csproj
-.\scripts\build.ps1
+dotnet run --project tests\Desksync.Tests.csproj -c Release
+.\scripts\test-updater.ps1
+.\scripts\build-v02.ps1
 ```
 
-The self-contained application and installer are produced in `artifacts`. To uninstall a desktop preview: quit Desksync, remove its Start menu/desktop/startup shortcuts and its installation directory under `%LocalAppData%\Programs\Afrosoftware\Desksync`. Keep `C:\Desksync` to retain your files. Keep the private profile under `%LocalAppData%\Afrosoftware\Desksync` if you plan to reinstall with the same device identity. Delete that profile only if intentionally retiring the device.
+The build pins Syncthing 2.1.7 and checks its official archive checksum. It produces the self-contained installer and update ZIP under `artifacts`. Installer payloads contain the app, service, updater, engine, instructions and license notices, never production configuration or device identities.
+
+The updater test builds isolated application fixtures and an ephemeral test key to exercise successful replacement and failed-start rollback. It does not alter the running production sync service or user files.
 
 ## Source and licenses
 
-Afrosoftware's wrapper source is MIT licensed. The bundled transfer engine is **Syncthing 2.1.7, MPL-2.0**, unmodified, with its license included. [Exact upstream source](https://github.com/syncthing/syncthing/tree/v2.1.7) · [Engine documentation](https://docs.syncthing.net/). Syncthing is not affiliated with or endorsing Desksync. .NET runtime notices are included with the distributed application. Source archives exclude credentials, engine identities, synchronized files and local data.
+The Afrosoftware wrapper is MIT licensed. The bundled, unmodified Syncthing 2.1.7 engine is MPL-2.0; its license and [exact upstream source](https://github.com/syncthing/syncthing/tree/v2.1.7) are provided. Microsoft .NET and WebView2 license notices are included. Syncthing, Google and Dropbox do not endorse Desksync.

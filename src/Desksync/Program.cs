@@ -1,121 +1,123 @@
 using System.Diagnostics;
+using System.Reflection;
+using System.Security.AccessControl;
+using System.Text.Json;
 using System.Text.Json.Nodes;
-
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
 namespace Desksync;
-
 internal static class Program
 {
-    [STAThread]
-    static void Main(string[] args)
-    {
-        ApplicationConfiguration.Initialize();
-        string? Option(string key) { var index = Array.IndexOf(args, key); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
-        using var serverService = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\DesksyncSync");
-        var serviceManaged = serverService != null && (Option("--data") == null || string.Equals(Option("--data"), @"C:\ProgramData\Desksync", StringComparison.OrdinalIgnoreCase));
-        var data = Option("--data") ?? (serviceManaged ? @"C:\ProgramData\Desksync" : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Afrosoftware", "Desksync"));
-        using var singleton = new Mutex(true, "Local\\Desksync-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(data.ToLowerInvariant())))[..16], out var first);
-        if (!first) { MessageBox.Show("Desksync is already running. Open it from the notification area.", "Desksync"); return; }
-        using var engine = new Engine(data, Option("--folder"));
-        if (args.Contains("--initialize")) { engine.Initialize().GetAwaiter().GetResult(); return; }
-        Application.Run(new MainWindow(engine, args.Contains("--background"), serviceManaged));
-    }
+ [STAThread] static void Main(string[] args)
+ {
+  ApplicationConfiguration.Initialize();string? Option(string key){var i=Array.IndexOf(args,key);return i>=0&&i+1<args.Length?args[i+1]:null;}
+  if(args.Contains("--install-server")){try{ServerSetup.Install(Option("--folder")??@"C:\Desksync");}catch(Exception e){MessageBox.Show(e.Message,"Server setup failed");Environment.ExitCode=1;}return;}
+  using var service=Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\DesksyncSync");var managed=service!=null&&(Option("--data")==null||string.Equals(Option("--data"),@"C:\ProgramData\Desksync",StringComparison.OrdinalIgnoreCase));
+  var home=Option("--data")??(managed?@"C:\ProgramData\Desksync":Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Afrosoftware","Desksync"));
+  using var singleton=new Mutex(true,"Local\\Desksync-"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(home.ToLowerInvariant())))[..16],out var first);if(!first){var existing=FindWindow(null,"Desksync");if(existing!=IntPtr.Zero){ShowWindow(existing,9);SetForegroundWindow(existing);}return;}
+  try{using var engine=new Engine(home,Option("--folder"));if(args.Contains("--initialize")){engine.Initialize().GetAwaiter().GetResult();engine.CompleteSetup(managed?"server":"desktop","selfhost");return;}Application.Run(new DesktopWindow(engine,managed,args.Contains("--background")));}
+  catch(Exception e){MessageBox.Show(e is UnauthorizedAccessException?"This is a managed server. Open Desksync as administrator to manage its private settings. Synchronization continues in the Windows service.":e.Message,"Desksync needs attention");Environment.ExitCode=1;}
+ }
+ [System.Runtime.InteropServices.DllImport("user32.dll",CharSet=System.Runtime.InteropServices.CharSet.Unicode)]static extern IntPtr FindWindow(string? className,string title);
+ [System.Runtime.InteropServices.DllImport("user32.dll")]static extern bool ShowWindow(IntPtr window,int command);
+ [System.Runtime.InteropServices.DllImport("user32.dll")]static extern bool SetForegroundWindow(IntPtr window);
 }
-
-sealed class MainWindow : Form
+sealed class DesktopWindow:Form
 {
-    readonly Engine engine;
-    readonly bool background;
-    readonly NotifyIcon tray;
-    readonly Label state = new() { Text = "Starting your sync engine…", AutoSize = true, Font = new Font("Segoe UI", 18, FontStyle.Bold), ForeColor = Color.FromArgb(37, 79, 46) };
-    readonly Label detail = new() { AutoSize = true, MaximumSize = new Size(650, 0) };
-    readonly TextBox peers = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Height = 115, Dock = DockStyle.Fill };
-    readonly FlowLayoutPanel actions = new() { AutoSize = true, WrapContents = true, Dock = DockStyle.Top };
-    readonly System.Windows.Forms.Timer timer = new() { Interval = 4000 };
-    bool ready, refreshing, paused, quitting;
-    public MainWindow(Engine engine, bool background, bool serviceManaged)
-    {
-        this.engine = engine; this.background = background;
-        Text = "Desksync · Afrosoftware"; Size = new Size(780, 650); MinimumSize = new Size(650, 570); StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 10); BackColor = Color.FromArgb(246, 249, 244); Icon = SystemIcons.Application;
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(28), ColumnCount = 1, RowCount = 10, AutoScroll = true };
-        layout.Controls.Add(new Label { Text = "DESKSYNC", Font = new Font("Segoe UI", 12, FontStyle.Bold), ForeColor = Color.FromArgb(75, 139, 59), AutoSize = true });
-        layout.Controls.Add(state); layout.Controls.Add(detail);
-        var open = Button("Open my folder", () => { Directory.CreateDirectory(engine.Settings.Folder); Process.Start(new ProcessStartInfo("explorer.exe", engine.Settings.Folder) { UseShellExecute = true }); return Task.CompletedTask; });
-        var pause = Button("Pause / resume", async () => { await engine.Pause(!paused); await RefreshStatus(); });
-        actions.Controls.Add(open); actions.Controls.Add(pause);
-        actions.Controls.Add(Button("Copy this device's code", () => { Clipboard.SetText(engine.Code.Encode()); MessageBox.Show("Pairing code copied. Paste it on the other device. A code identifies a device; both devices must accept each other before files transfer.", "Desksync pairing"); return Task.CompletedTask; }));
-        actions.Controls.Add(Button("Join another folder", () => Pair(true)));
-        actions.Controls.Add(Button("Approve a device", () => Pair(false)));
-        actions.Controls.Add(Button("Remove device", Remove));
-        layout.Controls.Add(actions);
-        layout.Controls.Add(new Label { Text = "Your devices", Font = new Font("Segoe UI", 11, FontStyle.Bold), AutoSize = true }); layout.Controls.Add(peers);
-        layout.Controls.Add(new Label { Text = "Both devices must be running to exchange changes. Offline edits stay on disk and sync after reconnection. Deletions also sync. Conflicting edits are kept as separate conflict files.", AutoSize = true, MaximumSize = new Size(660, 0) });
-        var links = new FlowLayoutPanel { AutoSize = true, WrapContents = true };
-        links.Controls.Add(Button("Afrosoftware account", () => { Process.Start(new ProcessStartInfo("https://afrosoftware.com/desksync") { UseShellExecute = true }); return Task.CompletedTask; }));
-        links.Controls.Add(Button("File versions", () => { var path = Path.Combine(engine.Settings.Folder, ".stversions"); if (!Directory.Exists(path)) throw new IOException("No older versions are stored yet. Versions are saved when another device changes or deletes a file."); Process.Start(new ProcessStartInfo("explorer.exe", path) { UseShellExecute = true }); return Task.CompletedTask; }));
-        links.Controls.Add(Button("Start at sign-in", () => { if (serviceManaged) { MessageBox.Show("This server already synchronizes automatically as the DesksyncSync Windows service, including while you are signed out.", "Desksync"); return Task.CompletedTask; } var exe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Desksync.cmd"); File.WriteAllText(exe, "@echo off\r\nstart \"\" \"" + Environment.ProcessPath + "\" --background\r\n"); MessageBox.Show("Desksync will start in the notification area when you sign in to Windows.", "Desksync"); return Task.CompletedTask; }));
-        links.Controls.Add(Button("About", () => { MessageBox.Show("Desksync 0.1.0 — Windows preview\nAfrosoftware setup and tray application.\n\nEncrypted file synchronization by Syncthing 2.1.7 (MPL-2.0). Source and license information are included in the installation.\n\nYour Afrosoftware account protects the hosted console. Desktop file pairing uses device certificates and does not require an online account.\n\nVersion retention is 30 days for remotely replaced/deleted files. Sync is not a backup. Do not sync live database files or secrets.", "About Desksync"); return Task.CompletedTask; }));
-        layout.Controls.Add(links);
-        layout.Controls.Add(new Label { Text = serviceManaged ? "The server Windows service keeps syncing after this window closes." : "Close this window to keep syncing in the tray. Choose Quit Desksync to stop it.", AutoSize = true, ForeColor = Color.DimGray });
-        Controls.Add(layout);
-        var menu = new ContextMenuStrip(); menu.Items.Add("Open Desksync", null, (_, _) => { Show(); WindowState = FormWindowState.Normal; Activate(); });
-        menu.Items.Add("Open sync folder", null, (_, _) => Process.Start(new ProcessStartInfo("explorer.exe", engine.Settings.Folder) { UseShellExecute = true }));
-        menu.Items.Add(serviceManaged ? "Close server dashboard" : "Quit Desksync", null, async (_, _) => { try { if (ready && !serviceManaged) await engine.Shutdown(); quitting = true; Close(); } catch (Exception ex) { MessageBox.Show(ex.Message, "Unable to stop Desksync"); } });
-        tray = new NotifyIcon { Icon = SystemIcons.Application, Text = "Desksync · starting", Visible = true, ContextMenuStrip = menu };
-        tray.DoubleClick += (_, _) => { Show(); WindowState = FormWindowState.Normal; Activate(); };
-        FormClosing += (_, e) => { if (!quitting && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } };
-        FormClosed += (_, _) => { timer.Dispose(); tray.Dispose(); };
-        Shown += async (_, _) => { if (background) Hide(); try { await engine.Initialize(); ready = true; await RefreshStatus(); timer.Start(); } catch (Exception ex) { state.Text = "Desksync needs attention"; detail.Text = ex.Message; Show(); } };
-        timer.Tick += async (_, _) => await RefreshStatus();
-    }
-    Button Button(string label, Func<Task> action)
-    {
-        var button = new Button { Text = label, AutoSize = true, Padding = new Padding(9, 5, 9, 5), Margin = new Padding(0, 6, 8, 6), FlatStyle = FlatStyle.Flat, BackColor = Color.White };
-        button.Click += async (_, _) => { if (!ready) return; button.Enabled = false; try { await action(); } catch (Exception ex) { MessageBox.Show(ex.Message, "Desksync", MessageBoxButtons.OK, MessageBoxIcon.Warning); } finally { button.Enabled = true; } }; return button;
-    }
-    async Task Pair(bool join)
-    {
-        using var dialog = new Form { Text = join ? "Join your server's folder" : "Approve your other device", Width = 650, Height = 300, StartPosition = FormStartPosition.CenterParent, Font = Font, MinimizeBox = false, MaximizeBox = false };
-        var text = new TextBox { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
-        var explanation = new Label { Dock = DockStyle.Top, Height = 85, Padding = new Padding(12), Text = join ? "Paste the server's pairing code. Your existing files stay in place and will merge with that folder. After joining, copy this device's code back to the server and approve it there." : "Paste your desktop's pairing code after it has joined this folder. Approving grants this device read, write, and delete access to the shared folder." };
-        var accept = new Button { Text = "Pair device", Dock = DockStyle.Bottom, Height = 42, DialogResult = DialogResult.OK };
-        dialog.Controls.Add(text); dialog.Controls.Add(explanation); dialog.Controls.Add(accept);
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        await engine.Pair(Pairing.Parse(text.Text), join); await RefreshStatus();
-        MessageBox.Show("Device configured. File transfer begins after both sides approve each other. On a new desktop, copy its device code and approve it on the server.", "Desksync pairing");
-    }
-    async Task Remove()
-    {
-        var devices = (await engine.Get("config/devices")).AsArray().Where(d => d!["deviceID"]!.GetValue<string>() != engine.DeviceId).ToArray();
-        if (devices.Length == 0) throw new IOException("There are no paired devices.");
-        using var dialog = new Form { Text = "Remove a device", Width = 610, Height = 230, StartPosition = FormStartPosition.CenterParent, Font = Font };
-        var select = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList }; foreach (var d in devices) select.Items.Add(d!["name"]!.GetValue<string>() + " · " + d["deviceID"]!.GetValue<string>());
-        select.SelectedIndex = 0;
-        var note = new Label { Text = "Removing a device stops future synchronization. It cannot erase files already copied to that device.", Dock = DockStyle.Top, Height = 60 };
-        var accept = new Button { Text = "Remove device", Dock = DockStyle.Bottom, Height = 40, DialogResult = DialogResult.OK };
-        dialog.Controls.Add(select); dialog.Controls.Add(note); dialog.Controls.Add(accept);
-        if (dialog.ShowDialog(this) == DialogResult.OK) { await engine.Forget(devices[select.SelectedIndex]!["deviceID"]!.GetValue<string>()); await RefreshStatus(); }
-    }
-    async Task RefreshStatus()
-    {
-        if (refreshing || !ready) return; refreshing = true;
-        try
-        {
-            var folder = await engine.Get("db/status?folder=" + Uri.EscapeDataString(engine.Settings.FolderId));
-            var config = await engine.Get("config/folders/" + Uri.EscapeDataString(engine.Settings.FolderId));
-            var connections = (await engine.Get("system/connections"))["connections"]!.AsObject();
-            var devices = (await engine.Get("config/devices")).AsArray().Where(d => d!["deviceID"]!.GetValue<string>() != engine.DeviceId).ToArray();
-            paused = config["paused"]?.GetValue<bool>() == true;
-            var errors = folder["errors"]?.GetValue<int>() ?? 0;
-            var connected = devices.Count(d => connections[d!["deviceID"]!.GetValue<string>()]?["connected"]?.GetValue<bool>() == true);
-            var status = folder["state"]?.GetValue<string>() ?? "unknown";
-            var need = folder["needTotalItems"]?.GetValue<long>() ?? 0;
-            state.Text = paused ? "Sync paused" : errors > 0 ? "Some files need attention" : devices.Length == 0 ? "Ready to pair your desktop" : connected == 0 ? "Waiting for your other device" : status == "idle" && need == 0 ? "Up to date" : "Synchronizing your files";
-            detail.Text = engine.Settings.Folder + "\n" + (folder["localFiles"]?.ToString() ?? "0") + " files on this device · " + connected + " of " + devices.Length + " devices connected" + (need > 0 ? " · " + need + " items to receive" : "") + (errors > 0 ? "\nCheck folder permissions and available disk space. Detailed engine errors are in the private engine.log file." : "");
-            peers.Text = devices.Length == 0 ? "No other devices have access yet." : string.Join("\r\n\r\n", devices.Select(d => { var id = d!["deviceID"]!.GetValue<string>(); return d["name"] + " — " + (connections[id]?["connected"]?.GetValue<bool>() == true ? "Connected" : "Offline") + "\r\n" + id; }));
-            tray.Text = "Desksync · " + state.Text;
-        }
-        catch (Exception ex) { state.Text = "Connection to sync engine lost"; detail.Text = ex.Message; tray.Text = "Desksync · needs attention"; }
-        finally { refreshing = false; }
-    }
+ const string Origin="https://app.desksync.local";
+    readonly Engine engine;readonly bool managed,background;readonly Account account;readonly Updates updates;readonly string userHome;
+ readonly WebView2 view=new(){Dock=DockStyle.Fill,DefaultBackgroundColor=Color.FromArgb(247,249,252)};
+ readonly NotifyIcon tray;readonly System.Windows.Forms.Timer timer=new(){Interval=2500};
+ bool ready,refreshing,quitting,updateCheckRunning,updateReady,autoInstall,uiLoaded,snapshotHealthy;DateTimeOffset updateChecked;string? error,notice;CancellationTokenSource? signIn;object? signInState;DateTimeOffset accountChecked;
+ public DesktopWindow(Engine engine,bool managed,bool background)
+ {
+  this.engine=engine;this.managed=managed;this.background=background;userHome=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Afrosoftware","DesksyncDesktop");Directory.CreateDirectory(userHome);Engine.Restrict(userHome);account=new Account(userHome);updates=new Updates(userHome);Text="Desksync";Size=new Size(1080,770);MinimumSize=new Size(900,650);StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(247,249,252);Icon=Brand.Icon();Controls.Add(view);AddMenus();
+  var menu=new ContextMenuStrip();menu.Items.Add("Open Desksync",null,(_,_)=>{Show();WindowState=FormWindowState.Normal;Activate();});menu.Items.Add("Open Desksync folder",null,(_,_)=>OpenFolder(engine.Settings.Folder));menu.Items.Add("Pause / resume",null,async(_,_)=>{if(ready)try{var f=await engine.Get("config/folders/"+engine.Settings.FolderId);await engine.Pause(f["paused"]?.GetValue<bool>()!=true);await RefreshState();}catch(Exception e){error=e.Message;}});menu.Items.Add("Sync activity",null,(_,_)=>{Show();Push(new{type="navigate",page="activity"});});menu.Items.Add("Settings",null,(_,_)=>{Show();Push(new{type="navigate",page="settings"});});menu.Items.Add("Check for updates",null,(_,_)=>_=CheckUpdates(false));menu.Items.Add(new ToolStripSeparator());menu.Items.Add(managed?"Close dashboard":"Quit Desksync",null,async(_,_)=>{try{if(ready&&!managed)await engine.Shutdown();quitting=true;Close();}catch(Exception e){MessageBox.Show(e.Message,"Desksync");}});
+  tray=new NotifyIcon{Icon=Icon,Text="Desksync · starting",Visible=true,ContextMenuStrip=menu};tray.DoubleClick+=(_,_)=>{Show();WindowState=FormWindowState.Normal;Activate();};FormClosing+=(_,e)=>{if(!quitting&&e.CloseReason==CloseReason.UserClosing){e.Cancel=true;Hide();}};FormClosed+=(_,_)=>{timer.Dispose();tray.Dispose();signIn?.Cancel();account.Dispose();view.Dispose();};Shown+=async(_,_)=>{if(background)Hide();await Start();};timer.Tick+=async(_,_)=>{await RefreshState();if(autoInstall&&updateReady)await ApplyUpdateIfIdle();if(DateTimeOffset.UtcNow-updateChecked>TimeSpan.FromHours(4)){updateChecked=DateTimeOffset.UtcNow;_=CheckUpdates(true);}};
+ }
+ async Task Start()
+ {
+  try
+  {
+   var runtimeHome=managed?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Afrosoftware","DesksyncUpdateState","ui-"+System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value):userHome;
+   Directory.CreateDirectory(runtimeHome);if(managed){var acl=new System.Security.AccessControl.DirectorySecurity();acl.SetAccessRuleProtection(true,false);foreach(var sid in new[]{new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.LocalSystemSid,null),new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid,null)})acl.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(sid,System.Security.AccessControl.FileSystemRights.FullControl,System.Security.AccessControl.InheritanceFlags.ContainerInherit|System.Security.AccessControl.InheritanceFlags.ObjectInherit,System.Security.AccessControl.PropagationFlags.None,System.Security.AccessControl.AccessControlType.Allow));new DirectoryInfo(runtimeHome).SetAccessControl(acl);}
+   var assembly=Assembly.GetExecutingAssembly();var ui=Path.Combine(runtimeHome,"ui-"+Assembly.GetExecutingAssembly().GetName().Version!.ToString(3));Directory.CreateDirectory(ui);foreach(var name in new[]{"index.html","app.js","styles.css"}){using var source=assembly.GetManifestResourceStream("Desksync.UI."+name)!;using var target=File.Create(Path.Combine(ui,name));await source.CopyToAsync(target);}
+   var environment=await CoreWebView2Environment.CreateAsync(null,Path.Combine(runtimeHome,"WebView2"),new CoreWebView2EnvironmentOptions("--disable-extensions"));await view.EnsureCoreWebView2Async(environment);var core=view.CoreWebView2;core.SetVirtualHostNameToFolderMapping("app.desksync.local",ui,CoreWebView2HostResourceAccessKind.DenyCors);
+   core.Settings.AreHostObjectsAllowed=false;core.Settings.AreDevToolsEnabled=false;core.Settings.AreDefaultContextMenusEnabled=false;core.Settings.AreDefaultScriptDialogsEnabled=false;core.Settings.IsStatusBarEnabled=false;core.NavigationStarting+=(_,e)=>{if(!e.Uri.StartsWith(Origin+"/",StringComparison.Ordinal))e.Cancel=true;};core.FrameNavigationStarting+=(_,e)=>e.Cancel=true;core.NewWindowRequested+=(_,e)=>e.Handled=true;core.PermissionRequested+=(_,e)=>e.State=CoreWebView2PermissionState.Deny;core.WebMessageReceived+=async(_,e)=>{if(e.Source.StartsWith(Origin+"/",StringComparison.Ordinal))await Command(e.WebMessageAsJson);};core.Navigate(Origin+"/index.html");
+   await engine.Initialize(engine.Settings.SetupCompleted||managed);if(managed&&!engine.Settings.SetupCompleted)engine.CompleteSetup("server","selfhost");if(!engine.Settings.SetupCompleted&&(await engine.Get("config/folders")).AsArray().Any(f=>f!["id"]!.GetValue<string>()==engine.Settings.FolderId&&f["devices"]!.AsArray().Count>1))engine.CompleteSetup("desktop");ready=true;await RefreshState();timer.Start();MarkUpdateHealthy();updateChecked=DateTimeOffset.UtcNow;_=CheckUpdates(true);
+  }
+  catch(WebView2RuntimeNotFoundException){MessageBox.Show("Microsoft Edge WebView2 is needed for the new Desksync interface. Run Desksync Setup to install this Microsoft component, then reopen Desksync.","One setup step needed");}
+  catch(Exception e){File.WriteAllText(Path.Combine(userHome,"startup-error.log"),e.ToString());error=e.Message;Push(new{type="failure",error});MessageBox.Show(e.Message,"Desksync needs attention");}
+ }
+ void Push(object value){if(view.CoreWebView2!=null&&view.Source?.GetLeftPart(UriPartial.Authority)==Origin)view.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(value));}
+ static void OpenFolder(string path){Directory.CreateDirectory(path);var p=new ProcessStartInfo("explorer.exe"){UseShellExecute=true};p.ArgumentList.Add(path);Process.Start(p);}
+ async Task RefreshState()
+ {
+  if(!ready||refreshing||IsDisposed)return;refreshing=true;try{if(account.Session!=null&&DateTimeOffset.UtcNow-accountChecked>TimeSpan.FromMinutes(5)){accountChecked=DateTimeOffset.UtcNow;try{await account.Refresh();}catch{notice="Account information is cached. Sync uses your approved device connection.";}}var snapshot=await engine.Snapshot();snapshotHealthy=true;Push(new{type="state",sync=snapshot,account=account.Public,managed,error,notice,signIn=signInState,updates=updates.State,automaticUpdates=updates.Automatic,version=Assembly.GetExecutingAssembly().GetName().Version!.ToString(3)});var state=JsonSerializer.SerializeToNode(snapshot)!;var paused=state["paused"]!.GetValue<bool>();var problem=state["errors"]!.GetValue<long>()>0;var connected=state["devices"]!.AsArray().Any(d=>d!["connected"]!.GetValue<bool>());MarkUpdateHealthy();tray.Text="Desksync · "+(paused?"Sync paused":problem?"Needs attention":!connected?"Waiting for your other device":state["phase"]!.ToString()=="idle"&&state["needed"]!.GetValue<long>()==0&&state["uploadNeededBytes"]!.GetValue<long>()==0?"Up to date":"Syncing files");}catch(Exception e){error=e.Message;Push(new{type="failure",error});}finally{refreshing=false;}
+ }
+ async Task Command(string json)
+ {
+  if(json.Length>16000)return;try{var m=JsonNode.Parse(json)!;var action=m["action"]?.ToString();if(action=="ui-ready"){uiLoaded=true;MarkUpdateHealthy();return;}if(action=="ready"){await RefreshState();return;}if(!ready)return;error=null;notice=null;
+   switch(action)
+   {
+    case "open-folder":OpenFolder(engine.Settings.Folder);break;
+    case "pause":await engine.Pause(m["paused"]?.GetValue<bool>()==true);break;
+    case "browse":using(var picker=new FolderBrowserDialog{Description="Choose your Desksync folder",UseDescriptionForTitle=true,SelectedPath=engine.Settings.Folder})if(picker.ShowDialog(this)==DialogResult.OK)Push(new{type="folder-picked",path=picker.SelectedPath});break;
+    case "configure":
+     var role=m["role"]?.ToString()??"desktop";var path=m["folder"]?.ToString()??@"C:\Desksync";
+     if(role=="server"&&!managed&&m["unattended"]?.GetValue<bool>()==true){Engine.ValidateFolder(path,@"C:\ProgramData\Desksync");await engine.Shutdown();timer.Stop();var p=new ProcessStartInfo(Environment.ProcessPath!){UseShellExecute=true,Verb="runas"};p.ArgumentList.Add("--install-server");p.ArgumentList.Add("--folder");p.ArgumentList.Add(path);using var helper=Process.Start(p)!;await helper.WaitForExitAsync();if(helper.ExitCode!=0)throw new IOException("Windows server setup did not finish. Reopen Desksync to restart the local engine. Your files were kept.");quitting=true;Close();return;}
+     if(engine.Settings.SetupCompleted&&!string.Equals(path,engine.Settings.Folder,StringComparison.OrdinalIgnoreCase)&&MessageBox.Show(this,"Copy your sync folder to the new empty location? Original files remain in the old folder.","Change folder location",MessageBoxButtons.OKCancel)!=DialogResult.OK)break;
+     await engine.SetFolder(path);engine.CompleteSetup(role,m["provider"]?.ToString()=="selfhost"?"selfhost":"afrosoftware");notice="Your folder is ready. Changes and deletions synchronize both ways.";break;
+    case "sign-in":if(!engine.Settings.SetupCompleted)await engine.SetFolder(m["folder"]?.ToString()??engine.Settings.Folder);_ = SignIn();break;
+    case "cancel-sign-in":signIn?.Cancel();signInState=null;break;
+    case "disconnect":if(MessageBox.Show(this,managed?"Sign out of your account? The server service will keep running.":"Disconnect this account, remove this computer's server access, and pause synchronization? Local files remain.","Disconnect account",MessageBoxButtons.YesNo)==DialogResult.Yes){if(!managed)await engine.Pause(true);await account.Disconnect();notice="Account disconnected. Local files were kept.";}break;
+    case "remove-device":var id=m["id"]?.ToString()??"";if(System.Text.RegularExpressions.Regex.IsMatch(id,"^[A-Z2-7]{7}(-[A-Z2-7]{7}){7}$")&&MessageBox.Show(this,"Remove this device's access? It keeps any files already downloaded.","Remove device",MessageBoxButtons.YesNo)==DialogResult.Yes)await engine.Forget(id);break;
+    case "save-connection":using(var save=new SaveFileDialog{Filter="Desksync connection (*.desksync)|*.desksync",FileName=engine.Settings.Role=="server"?"My Desksync server.desksync":"Approve "+engine.Settings.DeviceName+".desksync"})if(save.ShowDialog(this)==DialogResult.OK){await File.WriteAllTextAsync(save.FileName,engine.Code.Encode());notice="Connection file saved. Open it through Desksync on the other computer.";}break;
+    case "load-connection":using(var open=new OpenFileDialog{Filter="Desksync connection (*.desksync)|*.desksync|Text file (*.txt)|*.txt"})if(open.ShowDialog(this)==DialogResult.OK){if(new FileInfo(open.FileName).Length>1500)throw new IOException("This is not a valid connection file.");await engine.EnsureFolder();await engine.Pair(Pairing.Parse(await File.ReadAllTextAsync(open.FileName)),engine.Settings.Role!="server");engine.CompleteSetup(engine.Settings.Role,"selfhost");notice=engine.Settings.Role=="server"?"Computer approved. Waiting for its connection.":"Server added. Save this computer's connection file and approve it on the server to finish.";}break;
+    case "advanced-pair":await engine.EnsureFolder();await engine.Pair(Pairing.Parse(m["code"]?.ToString()??""),engine.Settings.Role!="server");engine.CompleteSetup(engine.Settings.Role,"selfhost");notice="Connection added. Both computers must approve each other.";break;
+    case "versions":var versions=Path.Combine(engine.Settings.Folder,".stversions");if(!Directory.Exists(versions))throw new IOException("No retained versions yet. Replaced and deleted files received from another device are kept here for up to 30 days.");OpenFolder(versions);break;
+    case "startup":Startup.Enable();notice="Desksync will start in the tray when you sign in to Windows.";break;
+    case "check-updates":_=CheckUpdates(false);break;
+    case "install-update":await ApplyUpdateIfIdle(true);break;
+    case "auto-updates":updates.SetAutomatic(m["enabled"]?.GetValue<bool>()==true);break;
+    case "help":Process.Start(new ProcessStartInfo("https://github.com/PeteZDj/desksync#readme"){UseShellExecute=true});break;
+    case "clear-notice":notice=null;error=null;break;
+    default:return;
+   }await RefreshState();
+  }catch(OperationCanceledException){signInState=null;await RefreshState();}catch(Exception e){error=e.Message;await RefreshState();}
+ }
+ void MarkUpdateHealthy(){if(!ready||!snapshotHealthy||!uiLoaded)return;var nonce=Environment.GetEnvironmentVariable("DESKSYNC_UPDATE_NONCE");if(System.Text.RegularExpressions.Regex.IsMatch(nonce??"","^[a-f0-9]{32}$")){Directory.CreateDirectory(Path.Combine(userHome,"updates"));File.WriteAllText(Path.Combine(userHome,"updates","health-"+nonce+".txt"),Assembly.GetExecutingAssembly().GetName().Version!.ToString(3));}}
+ async Task EditCommand(string command){if(view.Source?.GetLeftPart(UriPartial.Authority)!=Origin)return;var core=view.CoreWebView2;if(command=="copy"||command=="cut"){var value=await core.ExecuteScriptAsync("(()=>{const e=document.activeElement;return e&&typeof e.selectionStart==='number'?e.value.slice(e.selectionStart,e.selectionEnd):getSelection().toString()})()");var text=JsonSerializer.Deserialize<string>(value);if(!string.IsNullOrEmpty(text))Clipboard.SetText(text);if(command=="cut")await core.ExecuteScriptAsync("document.execCommand('delete')");}else if(command=="paste"){if(Clipboard.ContainsText())await core.ExecuteScriptAsync("document.execCommand('insertText',false,"+JsonSerializer.Serialize(Clipboard.GetText())+")");}else await core.ExecuteScriptAsync("document.execCommand('"+command+"')");}
+ void AddMenus()
+ {
+  var bar=new MenuStrip{BackColor=Color.White,ForeColor=Color.FromArgb(70,83,105),Font=new Font("Segoe UI",9)};
+  ToolStripMenuItem Top(string text){var item=new ToolStripMenuItem(text);bar.Items.Add(item);return item;}
+  void Item(ToolStripMenuItem menu,string text,Action action,string shortcut=""){var i=new ToolStripMenuItem(text){ShortcutKeyDisplayString=shortcut};if(shortcut.Length>0)try{i.ShortcutKeys=(Keys)new KeysConverter().ConvertFromInvariantString(shortcut)!;}catch(ArgumentException){}i.Click+=(_,_)=>action();menu.DropDownItems.Add(i);}
+  void Navigate(string page){Show();WindowState=FormWindowState.Normal;Activate();Push(new{type="navigate",page});}
+  var file=Top("&File");Item(file,"Open Desksync folder",()=>OpenFolder(engine.Settings.Folder),"Ctrl+O");Item(file,"Server connection…",()=>Navigate("connections"));Item(file,"Settings…",()=>Navigate("settings"));file.DropDownItems.Add(new ToolStripSeparator());Item(file,"Close window",()=>Hide(),"Alt+F4");Item(file,managed?"Close dashboard":"Quit Desksync",async()=>{try{if(ready&&!managed)await engine.Shutdown();quitting=true;Close();}catch(Exception e){MessageBox.Show(e.Message,"Desksync");}});
+  var edit=Top("&Edit");foreach(var (title,command,key) in new[]{("Undo","undo","Ctrl+Z"),("Redo","redo","Ctrl+Y"),("Cut","cut","Ctrl+X"),("Copy","copy","Ctrl+C"),("Paste","paste","Ctrl+V"),("Select all","selectAll","Ctrl+A")})Item(edit,title,async()=>{await EditCommand(command);},key);
+  var screen=Top("&View");Item(screen,"Home",()=>Navigate("home"));Item(screen,"Sync activity",()=>Navigate("activity"));Item(screen,"Devices",()=>Navigate("devices"));Item(screen,"Notifications",()=>Navigate("notifications"));Item(screen,"Refresh status",async()=>await RefreshState(),"F5");screen.DropDownItems.Add(new ToolStripSeparator());Item(screen,"Zoom in",()=>view.ZoomFactor=Math.Min(1.5,view.ZoomFactor+.1));Item(screen,"Zoom out",()=>view.ZoomFactor=Math.Max(.8,view.ZoomFactor-.1));Item(screen,"Actual size",()=>view.ZoomFactor=1);
+  var help=Top("&Help");Item(help,"Setup and self-hosting guide",()=>Process.Start(new ProcessStartInfo("https://github.com/PeteZDj/desksync#readme"){UseShellExecute=true}));Item(help,"Check for updates",()=>{Navigate("settings");_=CheckUpdates(false);});Item(help,"About Desksync",()=>MessageBox.Show("Desksync 0.2.0\nAfrosoftware\n\nA private, two-way folder for your devices.\nEncrypted synchronization by Syncthing 2.1.7 (MPL-2.0).\n\nAutomatic update packages are verified against the embedded Afrosoftware release key. This Windows preview is not yet signed with a publicly trusted code-signing certificate.","About Desksync"));MainMenuStrip=bar;Controls.Add(bar);bar.BringToFront();
+ }
+ async Task CheckUpdates(bool automatic)
+ {
+  if(updateCheckRunning)return;updateCheckRunning=true;try{updateReady=await updates.Check(()=>Push(new{type="update",updates=updates.State,automaticUpdates=updates.Automatic}),automatic);autoInstall=automatic&&updates.Automatic;if(updateReady&&autoInstall)await ApplyUpdateIfIdle();}finally{updateCheckRunning=false;}
+ }
+ async Task ApplyUpdateIfIdle(bool force=false)
+ {
+  if(!updateReady||signIn!=null||!engine.Settings.SetupCompleted)return;bool engineStopped=false;
+  try{if(!force){var state=await engine.Get("db/status?folder="+Uri.EscapeDataString(engine.Settings.FolderId));if(state["state"]?.ToString()!="idle")return;}if(!File.Exists(Path.Combine(AppContext.BaseDirectory,"Desksync.Updater.exe")))throw new IOException("The update helper is missing. Reinstall the current setup package to repair it.");timer.Stop();notice="Restarting to install the verified update. Your folder and device identity will be kept.";await RefreshState();if(!managed){await engine.Shutdown();engineStopped=true;}updates.Apply(managed);quitting=true;Close();}
+  catch(Exception e){autoInstall=false;error="Update postponed: "+e.Message;if(engineStopped)try{Process.Start(Engine.StartInfo("serve","--home",Path.Combine(engine.Home,"engine"),"--no-browser","--no-upgrade"));}catch{}timer.Start();await RefreshState();}
+ }
+ async Task SignIn()
+ {
+  if(signIn!=null)return;signIn=new CancellationTokenSource(TimeSpan.FromMinutes(10));try{var grant=await account.Begin(engine.DeviceId,engine.Settings.DeviceName,signIn.Token);signInState=new{code=grant["user_code"]!.ToString(),message="Finish signing in in your browser"};await RefreshState();var url=grant["verification_uri_complete"]!.GetValue<string>();if(!url.StartsWith("https://afrosoftware.com/desksync/authorize?",StringComparison.Ordinal))throw new IOException("The sign-in destination was not recognized.");Process.Start(new ProcessStartInfo(url){UseShellExecute=true});while(!signIn.IsCancellationRequested){await Task.Delay(5000,signIn.Token);if(await account.Poll(grant["device_code"]!.GetValue<string>(),signIn.Token))break;}signIn.Token.ThrowIfCancellationRequested();await engine.EnsureFolder();var peer=Pairing.Parse(account.Session!.Server["connectionCode"]!.GetValue<string>());if(peer.Device!=engine.DeviceId)await engine.Pair(peer,true);engine.CompleteSetup(managed?"server":"desktop");await engine.Pause(false);notice=managed?"Signed in to your Afrosoftware account.":"Signed in. This computer is now connected to your server.";accountChecked=DateTimeOffset.UtcNow;}
+  catch(OperationCanceledException){notice="Sign-in cancelled. Your files were kept.";}catch(Exception e){error=e.Message;}finally{signIn.Dispose();signIn=null;signInState=null;await RefreshState();}
+ }
+}
+static class Startup{public static void Enable(){using var key=Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");key.SetValue("Afrosoftware Desksync","\""+Environment.ProcessPath+"\" --background");}}
+static class Brand
+{
+ public static Icon Icon(){using var b=new Bitmap(64,64);using var g=Graphics.FromImage(b);g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;g.Clear(Color.Transparent);using var blue=new SolidBrush(Color.FromArgb(46,103,238));using var path=new System.Drawing.Drawing2D.GraphicsPath();path.AddArc(2,2,28,28,180,90);path.AddArc(34,2,28,28,270,90);path.AddArc(34,34,28,28,0,90);path.AddArc(2,34,28,28,90,90);path.CloseFigure();g.FillPath(blue,path);using var pen=new Pen(Color.White,5){StartCap=System.Drawing.Drawing2D.LineCap.Round,EndCap=System.Drawing.Drawing2D.LineCap.Round};g.DrawArc(pen,15,15,34,34,205,125);g.DrawArc(pen,15,15,34,34,25,125);g.DrawLines(pen,[new Point(37,13),new Point(48,17),new Point(45,29)]);g.DrawLines(pen,[new Point(27,51),new Point(16,47),new Point(19,35)]);var handle=b.GetHicon();try{return (Icon)System.Drawing.Icon.FromHandle(handle).Clone();}finally{DestroyIcon(handle);}}
+ [System.Runtime.InteropServices.DllImport("user32.dll")]static extern bool DestroyIcon(IntPtr icon);
 }

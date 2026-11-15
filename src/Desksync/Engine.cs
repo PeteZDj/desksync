@@ -9,7 +9,12 @@ using System.Xml.Linq;
 
 namespace Desksync;
 
-public sealed record Settings(string Folder, string FolderId, string DeviceName);
+public sealed record Settings(string Folder, string FolderId, string DeviceName)
+{
+    public string Role { get; init; } = "desktop";
+    public bool SetupCompleted { get; init; }
+    public string Provider { get; init; } = "afrosoftware";
+}
 public sealed record Pairing(string Device, string Folder, string Name)
 {
     public string Encode() => "desksync://pair?v=1&device=" + Uri.EscapeDataString(Device) + "&folder=" + Uri.EscapeDataString(Folder) + "&name=" + Uri.EscapeDataString(Name);
@@ -27,7 +32,7 @@ public sealed record Pairing(string Device, string Folder, string Name)
     }
 }
 
-public sealed class Engine : IDisposable
+public sealed partial class Engine : IDisposable
 {
     readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(15) };
     readonly string data;
@@ -48,7 +53,7 @@ public sealed class Engine : IDisposable
         Settings = File.Exists(settingsFile) ? JsonSerializer.Deserialize<Settings>(File.ReadAllText(settingsFile))! : new(folder ?? @"C:\Desksync", "desksync-" + Guid.NewGuid().ToString("N"), Environment.MachineName);
         if (!File.Exists(settingsFile)) Save();
     }
-    static void Restrict(string directory)
+    internal static void Restrict(string directory)
     {
         var acl = new DirectorySecurity(); acl.SetAccessRuleProtection(true, false);
         foreach (var sid in new[] { WindowsIdentity.GetCurrent().User!, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null) })
@@ -64,7 +69,7 @@ public sealed class Engine : IDisposable
     {
         var temp = Path.Combine(data, "settings.tmp"); File.WriteAllText(temp, JsonSerializer.Serialize(Settings)); File.Move(temp, Path.Combine(data, "settings.json"), true);
     }
-    public async Task Initialize()
+    public async Task Initialize(bool ensureFolder = true)
     {
         if (!File.Exists(Binary)) throw new FileNotFoundException("The sync engine is missing. Reinstall Desksync.");
         Restrict(data); Directory.CreateDirectory(engineHome);
@@ -107,13 +112,13 @@ public sealed class Engine : IDisposable
         }
         if (!available) throw new IOException("The sync engine did not start. Check for another application using port 5391.");
         var status = await Get("system/status"); DeviceId = status["myID"]!.GetValue<string>();
-        await EnsureFolder();
+        if (ensureFolder) await EnsureFolder();
     }
     public static ProcessStartInfo StartInfo(params string[] args)
     {
         var info = new ProcessStartInfo(Binary) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = AppContext.BaseDirectory };
         foreach (var arg in args) info.ArgumentList.Add(arg);
-        info.Environment["STVERSIONEXTRA"] = "Desksync 0.1.0"; return info;
+        info.Environment["STVERSIONEXTRA"] = "Desksync 0.2.0"; return info;
     }
     public async Task<JsonNode> Get(string route) => await http.GetFromJsonAsync<JsonNode>(route) ?? throw new IOException("The sync engine returned an empty response.");
     async Task Put(string route, JsonNode value)

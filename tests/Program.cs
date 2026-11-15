@@ -37,6 +37,14 @@ async Task Direct(Engine engine, string device, int port)
 }
 try
 {
+    using(var rsa=System.Security.Cryptography.RSA.Create(2048))
+    {
+        var metadata=System.Text.Encoding.UTF8.GetBytes("{\"version\":\"0.2.1\",\"url\":\"https://afrosoftware.com/downloads/desksync/test.zip\",\"sha256\":\""+new string('a',64)+"\",\"bytes\":100,\"channel\":\"preview\"}");
+        var signature=rsa.SignData(metadata,System.Security.Cryptography.HashAlgorithmName.SHA256,System.Security.Cryptography.RSASignaturePadding.Pss);
+        Check(UpdatePolicy.Verify(metadata,signature,rsa.ExportSubjectPublicKeyInfoPem()).Version=="0.2.1","Signed release metadata is accepted");metadata[12]^=1;var rejected=false;try{UpdatePolicy.Verify(metadata,signature,rsa.ExportSubjectPublicKeyInfoPem());}catch(IOException){rejected=true;}Check(rejected,"Tampered update metadata is rejected");
+        var unsafePath=false;try{UpdatePolicy.SafeTarget(root,@"..\escape.exe");}catch(IOException){unsafePath=true;}Check(unsafePath,"Update path traversal is rejected");
+    }
+    foreach(var blocked in new[]{@"C:\",@"C:\Windows",@"\\server\share",Path.Combine(root,"private")}){var rejected=false;try{Engine.ValidateFolder(blocked,Path.Combine(root,"private"));}catch(ArgumentException){rejected=true;}Check(rejected,"Unsafe sync folder is rejected");}
     foreach (var invalid in new[] { "https://evil.test/", "desksync://pair?v=2", "desksync://pair?v=1&device=bad&folder=..", "file:///C:/Windows" })
     {
         var rejected = false; try { Pairing.Parse(invalid); } catch (ArgumentException) { rejected = true; } Check(rejected, "Reject invalid pairing input");
@@ -66,6 +74,8 @@ try
     File.Delete(Path.Combine(a.Settings.Folder, "from-server.txt"));
     await WaitFor(() => !File.Exists(Path.Combine(b.Settings.Folder, "from-server.txt")), "Deletion synchronizes");
     Check(Directory.Exists(Path.Combine(b.Settings.Folder, ".stversions")) && Directory.EnumerateFiles(Path.Combine(b.Settings.Folder, ".stversions"), "*", SearchOption.AllDirectories).Any(), "Remote deletion retains a version");
+    var snapshot=System.Text.Json.JsonSerializer.SerializeToNode(await a.Snapshot())!;Check(snapshot["files"]!.GetValue<long>()>0,"Dashboard reports real file counts");Check(snapshot["diskTotal"]!.GetValue<long>()>0,"Dashboard reports real disk capacity");
+    var oldFolder=a.Settings.Folder;var newFolder=Path.Combine(root,"relocated");await a.SetFolder(newFolder);Check(File.Exists(Path.Combine(newFolder,"from-desktop.txt")),"Folder relocation copies existing files");Check(File.Exists(Path.Combine(oldFolder,"from-desktop.txt")),"Folder relocation keeps original files");
     await a.Forget(b.DeviceId);
     Check((await a.Get("config/devices")).AsArray().Count == 1, "Device revocation removes trust");
     Check((await a.Get("config/folders")).AsArray().All(f => f!["devices"]!.AsArray().All(d => d!["deviceID"]!.GetValue<string>() != b.DeviceId)), "Revocation removes folder grants");

@@ -2,7 +2,7 @@ $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
 [xml]$project=Get-Content -LiteralPath (Join-Path $root 'src\Desksync\Desksync.csproj')
 $version=[string]$project.Project.PropertyGroup.Version | Where-Object {$_}
-$app=Join-Path $root 'artifacts\app-v02'
+$app=Join-Path $root "artifacts\app-$version"
 & (Join-Path $PSScriptRoot brand-icon.ps1)
 dotnet publish (Join-Path $root 'src\Desksync\Desksync.csproj') -c Release -r win-x64 -o $app -p:EnableCompressionInSingleFile=true -v:q
 if($LASTEXITCODE){throw 'Desktop application build failed'}

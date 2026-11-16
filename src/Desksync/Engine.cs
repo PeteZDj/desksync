@@ -14,6 +14,8 @@ public sealed record Settings(string Folder, string FolderId, string DeviceName)
     public string Role { get; init; } = "desktop";
     public bool SetupCompleted { get; init; }
     public string Provider { get; init; } = "afrosoftware";
+    public int StoragePolicyVersion { get; init; }
+    public StorageMigration? StorageMigration { get; init; }
 }
 public sealed record Pairing(string Device, string Folder, string Name)
 {
@@ -119,6 +121,7 @@ public sealed partial class Engine : IDisposable
         if (!available) throw new IOException("The sync engine did not start. Check for another application using port 5391.");
         var status = await Get("system/status"); DeviceId = status["myID"]!.GetValue<string>();
         if (ensureFolder) await EnsureFolder();
+        await ApplyStoragePolicy();
     }
     public static ProcessStartInfo StartInfo(params string[] args)
     {
@@ -143,6 +146,7 @@ public sealed partial class Engine : IDisposable
         var folder = await Get("config/defaults/folder");
         folder["id"] = Settings.FolderId; folder["label"] = "Desksync"; folder["path"] = Settings.Folder;
         folder["type"] = "sendreceive"; folder["fsWatcherEnabled"] = true; folder["rescanIntervalS"] = 3600;
+        folder["minDiskFree"] = new JsonObject { ["value"] = 2, ["unit"] = "GB" };
         folder["devices"] = new JsonArray(new JsonObject { ["deviceID"] = DeviceId });
         folder["versioning"] = new JsonObject { ["type"] = "staggered", ["params"] = new JsonObject { ["maxAge"] = "2592000", ["cleanInterval"] = "3600" }, ["cleanupIntervalS"] = 3600, ["fsType"] = "basic", ["fsPath"] = "" };
         folders.AsArray().Add(folder); await Put("config/folders", folders);

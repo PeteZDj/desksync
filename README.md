@@ -2,7 +2,22 @@
 
 Your files. Your server. A Windows desktop and server app by Afrosoftware, with encrypted synchronization powered by Syncthing.
 
-[Download Windows setup 0.2.1](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.2.1-win-x64.exe) · [Checksum](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.2.1-win-x64.exe.sha256) · [Software page](https://afrosoftware.com/software/desksync)
+[Download Windows setup 0.3.0](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.3.0-win-x64.exe) · [Checksum](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.3.0-win-x64.exe.sha256) · [Software page](https://afrosoftware.com/software/desksync)
+
+## What is new in 0.3
+
+- Live upload/download queues show filenames, receiving devices, transferred bytes, percentages and network traffic. A queued transfer is labelled as waiting, not reported as actively transferring. Remote block progress is approximate until the receiver acknowledges completion.
+- Click the Home file count to open your folder, storage to view its settings, and Devices online to open the device list. Select a device for its completion, pending items and current health.
+- The tray shows current transfer state and filenames. Its icon animates during reported transfers and shows pause/error badges. Left-click opens the current status; right-click includes uploads/downloads, devices, pause/resume and Scan now.
+- Folder errors, missing permissions, paused/unshared remote folders and low disk space appear on Home and in Notifications. Connected devices with pending work are never labelled up to date solely because they have no pending bytes; zero-byte changes count too.
+- The inherited 1% free-space limits are migrated once to fixed reserves: **2 GB for the sync folder and 1 GB for the private sync index**. On a 1.8 TB disk the old threshold could require about 18 GB free before even indexing files. Non-default custom limits are preserved; the reserve is never disabled.
+- Afrosoftware-connected desktops report limited health information to their private owner server: counts, disk space, sync errors, version and migration outcome. Reports are bound to the authenticated device, expire from the live view after 90 seconds, and contain no account token, engine key, file contents or raw logs. Self-hosted connections continue to work without this hosted reporting.
+
+### If a 0.2 desktop is connected but files do not move
+
+Install 0.3 on both ends, keeping the existing folder and identity. If the old app is stuck in an engine error, use Settings → Check for updates → Restart & install, or quit its tray and run the installer. Older versions defer automatic installation while the engine is errored; 0.3 permits a verified update while the engine is safely idle or blocked by an error.
+
+Open Notifications for the exact blocker, then use **Scan now**. If the drive has less than the fixed reserve, free space or choose an empty folder on another local drive in Settings; do not remove the folder marker or reset the database. Folder moves copy files and preserve the originals. Check the live queue and the receiver's completion, then verify a small file in both directions. Synchronization is two-way, including deletions.
 
 ## What is new in 0.2
 
@@ -21,7 +36,7 @@ This is an **unsigned Windows x64 preview**. Windows SmartScreen may show an unk
 
 ## Upgrade from 0.1
 
-Quit the old tray app and install 0.2 once. Existing files, device certificates and folder identity are preserved. The old 0.1 app did not include an updater, so it cannot install this upgrade automatically. Subsequent releases can update from the 0.2 tray app.
+Quit the old tray app and install the current version once. Existing files, device certificates and folder identity are preserved. The old 0.1 app did not include an updater, so it cannot install this upgrade automatically. Subsequent releases can update from the tray app.
 
 The installer includes the .NET runtime. Microsoft Edge WebView2 is needed for the interface; setup downloads it from Microsoft and checks the Microsoft signature if it is missing. Windows Server 2025 and Windows 11 x64 are the initial targets. There are no Android, iPhone, Linux or macOS desktop releases in this version.
 
@@ -91,6 +106,7 @@ Requirements: Windows x64, .NET 10 SDK, PowerShell 7, and internet access for of
 ```powershell
 .\scripts\fetch-engine.ps1
 dotnet run --project tests\Desksync.Tests.csproj -c Release
+node tests\ui-state.cjs
 .\scripts\test-updater.ps1
 .\scripts\build-v02.ps1
 ```

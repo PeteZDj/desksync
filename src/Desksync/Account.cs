@@ -17,5 +17,13 @@ public sealed class Account : IDisposable
  public async Task Refresh(){if(Session==null)return;using var req=new HttpRequestMessage(HttpMethod.Get,"me");req.Headers.Authorization=new AuthenticationHeaderValue("Bearer",Session.AccessToken);using var r=await http.SendAsync(req);if(!r.IsSuccessStatusCode)throw new IOException("Reconnect your Afrosoftware account to refresh server information.");var d=await r.Content.ReadFromJsonAsync<JsonNode>();Session=Session with {Profile=d!["profile"]!.DeepClone(),Server=d["server"]!.DeepClone()};Save();}
  public async Task Disconnect(){if(Session==null)return;using var req=new HttpRequestMessage(HttpMethod.Delete,"session");req.Headers.Authorization=new AuthenticationHeaderValue("Bearer",Session.AccessToken);using var r=await http.SendAsync(req);if(!r.IsSuccessStatusCode&&r.StatusCode!=System.Net.HttpStatusCode.Unauthorized)throw new IOException("The server could not remove this computer yet. Sync has been paused; reconnect and try again.");Session=null;Save();}
  public object? Public=>Session==null?null:new{profile=Session.Profile,server=Session.Server,expires=Session.Expires};
+ public async Task ReportHealth(JsonNode snapshot)
+ {
+  if(Session==null)return;
+  var payload=new JsonObject{["version"]=typeof(Account).Assembly.GetName().Version!.ToString(3),["folderId"]=snapshot["folderId"]?.DeepClone(),["phase"]=snapshot["phase"]?.DeepClone(),["paused"]=snapshot["paused"]?.DeepClone(),["migrationWasBlocked"]=snapshot["storageMigration"]?["WasBlocked"]?.GetValue<bool>()==true};
+  foreach(var name in new[]{"files","bytes","diskFree","diskTotal","folderReserveBytes","metadataFree","metadataReserveBytes","needed","neededBytes","uploadNeededItems","uploadNeededBytes"})payload[name]=snapshot[name]?.DeepClone()??JsonValue.Create(0);
+  payload["issues"]=new JsonArray((snapshot["issues"]?.AsArray()??[]).Where(i=>string.IsNullOrEmpty(i?["DeviceId"]?.ToString())).Take(20).Select(i=>(JsonNode)new JsonObject{["code"]=i?["Code"]?.ToString(),["message"]=i?["Message"]?.ToString()}).ToArray());
+  using var request=new HttpRequestMessage(HttpMethod.Post,"health"){Content=JsonContent.Create(payload)};request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",Session.AccessToken);using var response=await http.SendAsync(request);response.EnsureSuccessStatusCode();var result=await response.Content.ReadFromJsonAsync<JsonNode>();Session=Session with{Server=result!["server"]!.DeepClone()};Save();
+ }
  public void Dispose()=>http.Dispose();
 }

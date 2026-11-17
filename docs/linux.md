@@ -1,10 +1,12 @@
-# Desksync for Linux — 0.3.1 preview
+# Desksync for Linux — 0.3.2 preview
 
 This Linux desktop client connects to your existing Desksync server. Files live in `~/Desksync` by default. Home, activity, devices, account and settings open at **http://127.0.0.1:5392** in the Linux computer's browser. Closing the tab leaves synchronization running.
 
 The packages include .NET 10 and unmodified Syncthing 2.1.7. Build targets are **Linux x64 and ARM64 with glibc**, intended for current Ubuntu/Debian/Fedora installations. Alpine/musl and 32-bit Linux are not supported. Native dependencies such as glibc, libstdc++, OpenSSL, zlib and ICU come from the distribution; see [Microsoft's Linux dependency guidance](https://learn.microsoft.com/en-us/dotnet/core/install/linux).
 
 This early preview is cross-compiled on Windows. Installation, browser sign-in and transfers must still be verified on the target Linux computer. There is no native tray icon or signed automatic Linux updater yet. Windows service and updater behavior are unchanged.
+
+Version 0.3.2 fixes the application launcher: choosing **Desksync** starts the local service or background process, waits for the dashboard health check, then opens the browser. The launcher now uses a Linux SVG icon. Pin this application entry to your desktop's dock if desired; the installer does not change dock preferences automatically.
 
 ## Install
 
@@ -19,13 +21,13 @@ case "$(uname -m)" in
 esac
 download_dir=$(mktemp -d)
 cd "$download_dir"
-package="Desksync-0.3.1-linux-$arch.tar.gz"
+package="Desksync-0.3.2-linux-$arch.tar.gz"
 base=https://afrosoftware.com/downloads/desksync
 curl --fail --location --proto '=https' --tlsv1.2 -O "$base/$package"
 curl --fail --location --proto '=https' --tlsv1.2 -O "$base/$package.sha256"
 sha256sum -c "$package.sha256"
 tar -xzf "$package"
-bash "desksync-0.3.1-linux-$arch/install.sh"
+bash "desksync-0.3.2-linux-$arch/install.sh"
 ```
 
 Open **http://127.0.0.1:5392** on the Linux computer, choose your folder and **Sign in & connect**. Approve the request in your normal Afrosoftware browser session. Sign-in is owner-only: an unrelated Google account cannot join your server. Check the short request code. If a new tab is blocked, open the sign-in address shown by Desksync yourself.
@@ -41,6 +43,8 @@ OpenAI documents that a [Dot has its own cloud computer](https://help.openai.com
 Use a dedicated folder. Approving Linux grants it read, write and delete access to the shared folder, including existing files. Test a uniquely named harmless text file in both directions and compare contents. Sync is not a backup.
 
 ## Startup, storage and troubleshooting
+
+If Chrome shows **ERR_CONNECTION_REFUSED**, it has not reached DeskSync's dashboard. First run `~/.local/opt/desksync/open.sh` from the terminal **on the visible Linux desktop**. If that fails, run `~/.local/opt/desksync/diagnose.sh` there and inspect its service status and the startup log. If an agent's separate command environment can connect but visible Chrome cannot, compare hostnames and network namespaces between that environment and the visible desktop. Install and launch on the visible desktop; opening a public port does not solve the environment mismatch safely.
 
 - Program: `~/.local/opt/desksync`. Private identity, configuration and account session: `${XDG_STATE_HOME:-~/.local/state}/desksync`. Keep private state outside the sync folder.
 - Linux tokens use a user-only file (directory 0700, file 0600), **not Windows DPAPI or an OS keyring**. Root and your Linux user can read them. Never copy private state to another computer; each computer needs its own identity.
@@ -62,3 +66,5 @@ With .NET 10 and PowerShell 7 on the Windows build server:
 ```
 
 Both tarballs and SHA-256 files appear under `artifacts`. Engine archive hashes are pinned from the official [Syncthing 2.1.7 release](https://github.com/syncthing/syncthing/releases/tag/v2.1.7). The wrapper is MIT; Syncthing is MPL-2.0 with its [exact source upstream](https://github.com/syncthing/syncthing/tree/v2.1.7). Included .NET components retain their Microsoft and third-party licenses.
+
+Run the isolated launcher checks with `bash tests/linux-launcher.sh`. These use mock services/browser commands and do not alter the installed app.

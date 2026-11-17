@@ -34,11 +34,12 @@ done
 if $running; then echo 'Sync engine has not stopped. Retry later.' >&2; exit 1; fi
 mkdir -p "$install_dir" "$HOME/.local/share/applications" "$HOME/.config/autostart"
 if [ "$source_dir" != "$install_dir" ]; then
- for name in desksync syncthing 'lib*.so' '*.txt' LINUX-SETUP.md desksync.ico; do
+ for name in desksync syncthing 'lib*.so' '*.txt' LINUX-SETUP.md desksync.ico desksync.svg open.sh diagnose.sh; do
   for file in "$source_dir"/$name; do [ ! -f "$file" ] || cp -- "$file" "$install_dir/"; done
  done
 fi
 chmod 700 "$install_dir/desksync" "$install_dir/syncthing"
+chmod 700 "$install_dir/open.sh" "$install_dir/diagnose.sh"
 cat > "$install_dir/start.sh" <<'START'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -86,16 +87,17 @@ cat > "$HOME/.local/share/applications/desksync.desktop" <<DESKTOP
 Type=Application
 Name=Desksync
 Comment=Open your private file sync dashboard
-Exec=xdg-open http://127.0.0.1:5392
-Icon=$install_dir/desksync.ico
+Exec="$install_dir/open.sh"
+Icon=$install_dir/desksync.svg
 Terminal=false
 Categories=Network;FileTransfer;
 DESKTOP
+if command -v update-desktop-database >/dev/null; then update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true; fi
 ready=false
-for _ in {1..80}; do
- if curl --fail --silent http://127.0.0.1:5392/ >/dev/null; then ready=true; break; fi
+for _ in {1..120}; do
+ if curl --noproxy '*' --connect-timeout 1 --max-time 2 --fail --silent http://127.0.0.1:5392/health | grep -q '"app":"desksync"'; then ready=true; break; fi
  sleep 0.25
 done
-if ! $ready; then echo 'Dashboard did not start. Inspect journalctl --user -u desksync or ~/.local/opt/desksync/dashboard.log for missing dependencies or a port conflict.' >&2; exit 1; fi
+if ! $ready; then echo 'Dashboard did not start. Run ~/.local/opt/desksync/diagnose.sh from the visible desktop terminal. Inspect journalctl --user -u desksync or ~/.local/opt/desksync/dashboard.log for startup errors.' >&2; exit 1; fi
 echo 'Open http://127.0.0.1:5392 on this Linux computer to finish setup.'
 echo 'Sync folder defaults to ~/Desksync. Private state is in ${XDG_STATE_HOME:-~/.local/state}/desksync.'

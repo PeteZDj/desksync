@@ -8,3 +8,4 @@ vendor/syncthing.exe
 !src/Shared/UpdatePublicKey.pem
 config.xml
 settings.json
+**/node_modules/

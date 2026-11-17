@@ -36,7 +36,8 @@ public sealed record Pairing(string Device, string Folder, string Name)
 
 public sealed partial class Engine : IDisposable
 {
-    readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    // This client only talks to the pinned loopback engine. Never send its key to an environment proxy.
+    readonly HttpClient http = new(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(15) };
     readonly string data;
     readonly string engineHome;
     readonly int guiPort;
@@ -113,16 +114,16 @@ public sealed partial class Engine : IDisposable
         var address = gui.Element("address")!.Value;
         if (address != "127.0.0.1:" + guiPort) throw new IOException("Desksync requires its engine administration API to stay on its configured loopback port.");
         http.BaseAddress = new Uri("http://" + address + "/rest/");
-        http.DefaultRequestHeaders.Add("X-API-Key", gui.Element("apikey")!.Value);
+        http.DefaultRequestHeaders.Remove("X-API-Key");http.DefaultRequestHeaders.Add("X-API-Key", gui.Element("apikey")!.Value);
         var available = false;
-        try { using var ping = await http.GetAsync("system/ping"); available = ping.IsSuccessStatusCode; } catch (HttpRequestException) { }
+        try { available = (await Get("system/ping"))["ping"]?.ToString()=="pong"; } catch (HttpRequestException) { }
         if (!available)
         {
             Process.Start(StartInfo("serve", "--home", engineHome, "--no-browser", "--no-upgrade", "--log-file", Path.Combine(data, "engine.log"), "--log-max-size", "5242880", "--log-max-old-files", "2"));
             for (var i = 0; i < 40; i++)
             {
                 await Task.Delay(250);
-                try { using var ping = await http.GetAsync("system/ping"); if (ping.IsSuccessStatusCode) { available = true; break; } } catch (HttpRequestException) { }
+                try { if ((await Get("system/ping"))["ping"]?.ToString()=="pong") { available = true; break; } } catch (HttpRequestException) { }
             }
         }
         if (!available) throw new IOException("The sync engine did not start. Check for another application using port 5391.");
@@ -136,7 +137,14 @@ public sealed partial class Engine : IDisposable
         foreach (var arg in args) info.ArgumentList.Add(arg);
         info.Environment["STVERSIONEXTRA"] = "Desksync "+typeof(Engine).Assembly.GetName().Version!.ToString(3); return info;
     }
-    public async Task<JsonNode> Get(string route) => await http.GetFromJsonAsync<JsonNode>(route) ?? throw new IOException("The sync engine returned an empty response.");
+    public async Task<JsonNode> Get(string route)
+    {
+        using var response=await http.GetAsync(route);response.EnsureSuccessStatusCode();
+        var type=response.Content.Headers.ContentType?.MediaType;
+        if(type!="application/json"&&type?.EndsWith("+json",StringComparison.OrdinalIgnoreCase)!=true)throw new IOException("The local sync engine returned a non-JSON response for /rest/"+route.Split('?')[0]+". Check the engine port. Local engine requests bypass proxy settings.");
+        try{return await response.Content.ReadFromJsonAsync<JsonNode>()??throw new IOException("The local sync engine returned an empty response.");}
+        catch(JsonException){throw new IOException("The local sync engine returned invalid JSON for /rest/"+route.Split('?')[0]+". Check the engine port and local engine log.");}
+    }
     async Task Put(string route, JsonNode value)
     {
         using var response = await http.PutAsJsonAsync(route, value);

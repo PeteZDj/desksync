@@ -1,0 +1,83 @@
+name: Desktop installers
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          - runner: macos-15-intel
+            platform: mac
+            arch: x64
+          - runner: macos-15
+            platform: mac
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          dotnet-version: '10.0.x'
+      - run: npm ci --no-audit --no-fund
+        working-directory: src/Desksync.Desktop
+      - run: node --test tests/desktop.test.cjs
+      - run: node scripts/prepare-desktop.cjs
+      - name: Linux GUI dependencies and Chromium sandbox
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64 libgbm1 libnotify4 libsecret-1-0
+          sudo chown root:root src/Desksync.Desktop/node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 src/Desksync.Desktop/node_modules/electron/dist/chrome-sandbox
+      - name: Native Linux desktop smoke test
+        if: matrix.platform == 'linux'
+        env:
+          DESKSYNC_TEST_STATE: ${{ runner.temp }}/desksync-smoke
+          DESKSYNC_SMOKE_OUTPUT: ${{ github.workspace }}/artifacts/desktop-smoke-${{ matrix.platform }}-${{ matrix.arch }}.json
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          NO_PROXY: ''
+        run: xvfb-run -a src/Desksync.Desktop/node_modules/.bin/electron src/Desksync.Desktop --smoke-test
+      - name: Native macOS desktop smoke test
+        if: matrix.platform == 'mac'
+        env:
+          DESKSYNC_TEST_STATE: ${{ runner.temp }}/desksync-smoke
+          DESKSYNC_SMOKE_OUTPUT: ${{ github.workspace }}/artifacts/desktop-smoke-${{ matrix.platform }}-${{ matrix.arch }}.json
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          NO_PROXY: ''
+        run: src/Desksync.Desktop/node_modules/.bin/electron src/Desksync.Desktop --smoke-test
+      - name: Package installers
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        working-directory: src/Desksync.Desktop
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+      - name: Installer checksums
+        shell: bash
+        run: |
+          node -e 'const fs=require("fs"),c=require("crypto"),p="artifacts/desktop-release/";for(const n of fs.readdirSync(p).filter(n=>/\.(deb|dmg|zip|tar\.gz)$/.test(n))){fs.writeFileSync(p+n+".sha256",c.createHash("sha256").update(fs.readFileSync(p+n)).digest("hex")+"  "+n+"\n");}'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            artifacts/desktop-release/*.deb
+            artifacts/desktop-release/*.dmg
+            artifacts/desktop-release/*.zip
+            artifacts/desktop-release/*.tar.gz
+            artifacts/desktop-release/*.sha256
+            artifacts/desktop-smoke-*
+          if-no-files-found: warn

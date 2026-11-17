@@ -17,21 +17,26 @@ if(!OperatingSystem.IsWindows())for(var p=new DirectoryInfo(data);p!=null;p=p.Pa
 using var singleton=new FileStream(Path.Combine(data,"dashboard.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
 using var engine=new Engine(data,Option("--folder"),enginePort);
 using var account=new Account(data);
-await engine.Initialize(engine.Settings.SetupCompleted);
-if(args.Contains("--initialize")){await engine.EnsureFolder();engine.CompleteSetup("desktop","selfhost");return;}
-var token=Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+bool engineReady=false;string? startupError=null;
+async Task Initialize(){try{await engine.Initialize(engine.Settings.SetupCompleted);engineReady=true;startupError=null;}catch(Exception e){engineReady=false;startupError=e is IOException or HttpRequestException?e.Message:"The sync engine could not start. Check the local engine log and folder permissions.";Console.Error.WriteLine(startupError);}}
+await Initialize();
+if(args.Contains("--initialize")){if(!engineReady)throw new IOException(startupError);await engine.EnsureFolder();engine.CompleteSetup("desktop","selfhost");return;}
+var token=Environment.GetEnvironmentVariable("DESKSYNC_DESKTOP_TOKEN")??Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 var origin=$"http://127.0.0.1:{port}";
 var builder=WebApplication.CreateSlimBuilder(Array.Empty<string>());
 builder.Logging.ClearProviders();builder.WebHost.UseUrls(origin);builder.WebHost.ConfigureKestrel(o=>o.Limits.MaxRequestBodySize=16000);
 var app=builder.Build();using var gate=new SemaphoreSlim(1,1);
 CancellationTokenSource? signingIn=null;object? signInState=null;string? error=null,notice=null;
-async Task<object> State(){var snapshot=JsonSerializer.SerializeToNode(await engine.Snapshot())!;PeerHealth.Merge(snapshot,account.Session?.Server["peerHealth"]);return new{type="state",sync=snapshot,account=account.Public,managed=false,error,notice,signIn=signInState,updates=new{phase="manual",message="Linux preview updates are installed manually. See the Linux setup guide."},automaticUpdates=false,platform="linux",version="0.3.1"};}
+var version=Assembly.GetExecutingAssembly().GetName().Version!.ToString(3);
+async Task<object> State(){if(!engineReady)return new{type="failure",error=startupError,retryEngine=true};var snapshot=JsonSerializer.SerializeToNode(await engine.Snapshot())!;PeerHealth.Merge(snapshot,account.Session?.Server["peerHealth"]);return new{type="state",sync=snapshot,account=account.Public,managed=false,error,notice,signIn=signInState,updates=new{phase="manual",message="Desktop preview updates are installed manually. See the setup guide."},automaticUpdates=false,platform=OperatingSystem.IsMacOS()?"macos":"linux",version};}
 app.Use(async(context,next)=>{
  context.Response.Headers.CacheControl="no-store";context.Response.Headers["X-Content-Type-Options"]="nosniff";context.Response.Headers["Referrer-Policy"]="no-referrer";context.Response.Headers["Content-Security-Policy"]="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'";
  if(context.Request.Host.Value!=$"127.0.0.1:{port}"){context.Response.StatusCode=403;return;}
  if(context.Request.Path.StartsWithSegments("/api")&&(context.Request.Headers["X-Desksync-Token"]!=token||(context.Request.Headers.Origin.Count>0&&context.Request.Headers.Origin!=origin))){context.Response.StatusCode=403;return;}
  await next();
 });
+app.MapGet("/health",()=>Results.Json(new{app="desksync",version}));
+app.MapGet("/api/desktop",()=>Results.Json(new{app="desksync",version}));
 app.MapGet("/{file?}",(string? file)=>{
  file=string.IsNullOrEmpty(file)?"index.html":file;
  if(!new[]{"index.html","app.js","styles.css","bridge.js"}.Contains(file))return Results.NotFound();
@@ -40,13 +45,16 @@ app.MapGet("/{file?}",(string? file)=>{
  if(file=="index.html")text=text.Replace("connect-src 'none'","connect-src 'self'").Replace("<title>",$"<meta name=\"desksync-token\" content=\"{token}\"><title>").Replace("<script src=\"app.js\"", "<script src=\"bridge.js\"></script><script src=\"app.js\"");
  return Results.Text(text,file.EndsWith(".js")?"text/javascript":file.EndsWith(".css")?"text/css":"text/html");
 });
-app.MapGet("/api/state",async()=>{await gate.WaitAsync();try{return Results.Json(await State());}catch(Exception){return Results.Json(new{type="failure",error="The sync engine is unavailable. Check the local engine log."});}finally{gate.Release();}});
+app.MapGet("/api/state",async()=>{await gate.WaitAsync();try{return Results.Json(await State());}catch(Exception e){engineReady=false;startupError=e is IOException or HttpRequestException?e.Message:"The sync engine is unavailable. Check the local engine log.";return Results.Json(await State());}finally{gate.Release();}});
 app.MapPost("/api/command",async(HttpRequest request)=>{
  await gate.WaitAsync();try{
  var m=await JsonNode.ParseAsync(request.Body)??throw new ArgumentException("Missing command.");error=null;notice=null;
+ if(m["action"]?.ToString()=="retry-engine"){await Initialize();return Results.Json(await State());}
+ if(!engineReady)return Results.Json(await State());
  switch(m["action"]?.ToString()){
  case "rescan":await engine.Rescan();notice="Scan requested.";break;
  case "pause":await engine.Pause(m["paused"]?.GetValue<bool>()==true);break;
+ case "shutdown":await engine.Shutdown();app.Lifetime.StopApplication();return Results.Json(new{type="stopping"});
  case "configure":
   if(m["role"]?.ToString()=="server")throw new IOException("This Linux preview connects desktops. Use the Windows server setup for hosting.");
   await engine.SetFolder(m["folder"]?.ToString()??engine.Settings.Folder);engine.CompleteSetup("desktop",m["provider"]?.ToString()=="selfhost"?"selfhost":"afrosoftware");notice="Folder ready. Connect through your account or a server connection file.";break;
@@ -66,7 +74,7 @@ app.MapPost("/api/command",async(HttpRequest request)=>{
   signInState=new{code=grant["user_code"]!.ToString()};_ = FinishSignIn(grant,signingIn);return Results.Json(new{type="open-url",url});
   }catch{signingIn.Dispose();signingIn=null;throw;}
  case "help":return Results.Json(new{type="open-url",url="https://github.com/PeteZDj/desksync/blob/main/docs/linux.md"});
- case "startup":notice="Run install.sh from your Linux download to enable user startup. The Linux guide includes the fallback for computers without systemd.";break;
+ case "startup":return Results.Json(new{type="desktop-startup"});
  case "check-updates":case "install-update":case "auto-updates":notice="Linux preview updates are manual. Use the versioned Linux download and checksum from the setup guide.";break;
  case "clear-notice":error=null;notice=null;break;
  default:throw new ArgumentException("Unsupported command.");
@@ -84,8 +92,9 @@ async Task FinishSignIn(JsonNode grant,CancellationTokenSource operation){
  }catch(OperationCanceledException){notice="Sign-in cancelled or expired. Your files were kept.";}catch(Exception){error="Sign-in could not finish. Try again or use a server connection file.";}finally{await gate.WaitAsync();try{operation.Dispose();signingIn=null;signInState=null;}finally{gate.Release();}}
 }
 app.Lifetime.ApplicationStopping.Register(()=>signingIn?.Cancel());
-Console.WriteLine("Desksync Linux preview: "+origin+" — close the dashboard tab without stopping file sync.");
+await app.StartAsync();
+Console.WriteLine("Desksync Linux preview ready: "+origin+" — close the dashboard tab without stopping file sync.");
 if(!args.Contains("--no-browser"))Open(origin);
-await app.RunAsync();
+await app.WaitForShutdownAsync();
 static void Open(string target){try{var p=new ProcessStartInfo(OperatingSystem.IsWindows()?"explorer.exe":"xdg-open"){UseShellExecute=false,CreateNoWindow=true};p.ArgumentList.Add(target);Process.Start(p);}catch{} }
 static class Native{[DllImport("libc",EntryPoint="umask")]internal static extern uint umask(uint mask);}

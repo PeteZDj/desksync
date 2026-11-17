@@ -1,7 +1,7 @@
 param([ValidateSet('x64','arm64')][string[]]$Architecture=@('x64','arm64'))
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
-$version='0.3.1'
+$version='0.3.2'
 $hashes=@{x64='2edc416e7ed136b7c858ed5f3f02a3b8316589605e54c380228ceea7acbf0142';arm64='48e456690cd2b97e7d26b02b5ac35f62a3b36172267b144cfeaf02c993ab955c'}
 foreach($arch in $Architecture){
  $rid="linux-$arch"; $engineArch=if($arch -eq 'x64'){'amd64'}else{'arm64'}
@@ -26,7 +26,10 @@ foreach($arch in $Architecture){
  Copy-Item (Join-Path $root 'LICENSE') (Join-Path $package 'LICENSE.txt') -Force
  Copy-Item (Join-Path $root 'docs\linux.md') (Join-Path $package 'LINUX-SETUP.md') -Force
  Copy-Item (Join-Path $root 'scripts\linux\install.sh') $package -Force
+ Copy-Item (Join-Path $root 'scripts\linux\open.sh') $package -Force
+ Copy-Item (Join-Path $root 'scripts\linux\diagnose.sh') $package -Force
  Copy-Item (Join-Path $root 'assets\desksync.ico') $package -Force
+ Copy-Item (Join-Path $root 'assets\desksync.svg') $package -Force
  $output=Join-Path $root "artifacts\Desksync-$version-$rid.tar.gz"
  tar -czf $output -C $stage "desksync-$version-$rid"
  if($LASTEXITCODE -ne 0){throw 'Linux packaging failed.'}

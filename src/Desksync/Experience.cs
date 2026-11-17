@@ -12,18 +12,25 @@ public sealed partial class Engine
     public void CompleteSetup(string role, string provider = "afrosoftware") { Settings = Settings with { Role = role == "server" ? "server" : "desktop", Provider = provider, SetupCompleted = true }; Save(); }
     public static string ValidateFolder(string value, string privateHome)
     {
-        var path = Path.GetFullPath(value.Trim()).TrimEnd(Path.DirectorySeparatorChar);
+        if(string.IsNullOrWhiteSpace(value)||!Path.IsPathFullyQualified(value.Trim()))throw new ArgumentException("Choose an absolute path for your dedicated sync folder.");
+        var path = CanonicalPath(value.Trim());
         if(path.StartsWith(@"\\",StringComparison.Ordinal))throw new ArgumentException("Choose a folder on a local drive. Each computer keeps its own mirrored files.");
-        var blocked = new[] { Path.GetPathRoot(path)!.TrimEnd('\\'), Environment.GetFolderPath(Environment.SpecialFolder.Windows).TrimEnd('\\'), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('\\') };
-        if (blocked.Any(x => string.Equals(path, x, StringComparison.OrdinalIgnoreCase))) throw new ArgumentException("Choose a dedicated folder, such as C:\\Desksync, instead of an entire drive or system folder.");
-        foreach (var protectedPath in new[] { Path.GetFullPath(privateHome).TrimEnd('\\'), Path.GetFullPath(AppContext.BaseDirectory).TrimEnd('\\'),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Afrosoftware","DesksyncDesktop"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Afrosoftware","DesksyncUpdateState"),@"C:\ProgramData\DesksyncRelease" })
-            if (path.Equals(protectedPath,StringComparison.OrdinalIgnoreCase)||path.StartsWith(protectedPath+'\\',StringComparison.OrdinalIgnoreCase)||protectedPath.StartsWith(path+'\\',StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Keep the sync folder separate from Desksync's application files and private settings.");
+        var blocked = new[] { Path.GetPathRoot(path)!, Environment.GetFolderPath(Environment.SpecialFolder.Windows), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) };
+        if (blocked.Where(x=>!string.IsNullOrEmpty(x)).Any(x => SamePath(path,x))) throw new ArgumentException("Choose a dedicated folder instead of an entire drive, home or system folder.");
+        var protectedPaths = new List<string>{privateHome,AppContext.BaseDirectory,Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Afrosoftware","DesksyncDesktop")};
+        if(OperatingSystem.IsWindows())protectedPaths.AddRange([Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Afrosoftware","DesksyncUpdateState"),@"C:\ProgramData\DesksyncRelease"]);
+        else {
+            foreach(var systemPath in new[]{"/etc","/usr","/var","/proc","/sys","/dev","/boot","/bin","/sbin","/lib","/lib64","/run"})if(Within(path,systemPath))throw new ArgumentException("Choose a dedicated folder in your home or data drive, outside system directories.");
+            for(var current=new DirectoryInfo(path);current!=null;current=current.Parent)if(current.LinkTarget!=null)throw new ArgumentException("Choose an ordinary folder without symbolic links in its path.");
+        }
+        foreach (var protectedPath in protectedPaths)
+            if (Within(path,protectedPath)||Within(protectedPath,path)) throw new ArgumentException("Keep the sync folder separate from Desksync's application files and private settings.");
         return path;
     }
     public async Task SetFolder(string value)
     {
         var path = ValidateFolder(value, data);
-        if (string.Equals(path.TrimEnd('\\'),Settings.Folder.TrimEnd('\\'),StringComparison.OrdinalIgnoreCase)) { await EnsureFolder(); return; }
+        if (SamePath(path,Settings.Folder)) { await EnsureFolder(); return; }
         await mutation.WaitAsync();
         try
         {

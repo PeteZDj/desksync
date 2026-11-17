@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <AssemblyName>desksync</AssemblyName><Version>0.3.1</Version><DefineConstants>$(DefineConstants);DESKSYNC_LINUX</DefineConstants>
+    <PublishSingleFile>true</PublishSingleFile><SelfContained>true</SelfContained><EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Desksync/Engine.cs" Link="Engine.cs"/><Compile Include="../Desksync/Experience.cs" Link="Experience.cs"/>
+    <Compile Include="../Desksync/SyncState.cs" Link="SyncState.cs"/><Compile Include="../Desksync/Account.cs" Link="Account.cs"/>
+    <EmbeddedResource Include="../Desksync/UI/*" Link="UI/%(Filename)%(Extension)" LogicalName="Desksync.UI.%(Filename)%(Extension)"/>
+    <EmbeddedResource Include="bridge.js" LogicalName="Desksync.UI.bridge.js"/>
+  </ItemGroup>
+</Project>

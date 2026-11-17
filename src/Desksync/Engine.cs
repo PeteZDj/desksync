@@ -44,7 +44,12 @@ public sealed partial class Engine : IDisposable
     public Settings Settings { get; private set; }
     public string DeviceId { get; private set; } = "";
     public string Home => data;
-    public static string Binary => Path.Combine(AppContext.BaseDirectory, "syncthing.exe");
+    public static string Binary => Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "syncthing.exe" : "syncthing");
+    internal static StringComparison PathComparison => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    internal static string CanonicalPath(string value) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(value));
+    internal static bool SamePath(string a, string b) => string.Equals(CanonicalPath(a), CanonicalPath(b), PathComparison);
+    internal static bool Within(string path, string parent) => SamePath(path,parent) || CanonicalPath(path).StartsWith(Path.EndsInDirectorySeparator(CanonicalPath(parent))?CanonicalPath(parent):CanonicalPath(parent)+Path.DirectorySeparatorChar,PathComparison);
+    internal static DriveInfo DiskFor(string path) => OperatingSystem.IsWindows() ? new DriveInfo(Path.GetPathRoot(path)!) : DriveInfo.GetDrives().Where(d=>d.IsReady&&Within(path,d.Name)).OrderByDescending(d=>d.Name.Length).First();
     public Engine(string dataDirectory, string? folder = null, int guiPort = 5391)
     {
         if (guiPort < 1024 || guiPort > 65535) throw new ArgumentException("Choose a local API port between 1024 and 65535.");
@@ -52,11 +57,12 @@ public sealed partial class Engine : IDisposable
         data = Path.GetFullPath(dataDirectory); engineHome = Path.Combine(data, "engine");
         Directory.CreateDirectory(data);
         var settingsFile = Path.Combine(data, "settings.json");
-        Settings = File.Exists(settingsFile) ? JsonSerializer.Deserialize<Settings>(File.ReadAllText(settingsFile))! : new(folder ?? @"C:\Desksync", "desksync-" + Guid.NewGuid().ToString("N"), Environment.MachineName);
+        Settings = File.Exists(settingsFile) ? JsonSerializer.Deserialize<Settings>(File.ReadAllText(settingsFile))! : new(folder ?? (OperatingSystem.IsWindows() ? @"C:\Desksync" : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),"Desksync")), "desksync-" + Guid.NewGuid().ToString("N"), Environment.MachineName);
         if (!File.Exists(settingsFile)) Save();
     }
     internal static void Restrict(string directory)
     {
+        if(!OperatingSystem.IsWindows()) { File.SetUnixFileMode(directory,UnixFileMode.UserRead|UnixFileMode.UserWrite|UnixFileMode.UserExecute); return; }
         var acl = new DirectorySecurity(); acl.SetAccessRuleProtection(true, false);
         foreach (var sid in new[] { WindowsIdentity.GetCurrent().User!, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null), new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null) })
             acl.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
@@ -73,6 +79,7 @@ public sealed partial class Engine : IDisposable
     }
     void GrantServerFolderAccess(string folder)
     {
+        if(!OperatingSystem.IsWindows())return;
         if(!string.Equals(data.TrimEnd('\\'),@"C:\ProgramData\Desksync",StringComparison.OrdinalIgnoreCase))return;
         try{var sid=(SecurityIdentifier)new NTAccount(@"NT SERVICE\DesksyncSync").Translate(typeof(SecurityIdentifier));var info=new DirectoryInfo(folder);var acl=info.GetAccessControl();acl.AddAccessRule(new FileSystemAccessRule(sid,FileSystemRights.FullControl,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));info.SetAccessControl(acl);}
         catch(IdentityNotMappedException){/* First-time setup grants access after creating the service. */}
@@ -141,7 +148,7 @@ public sealed partial class Engine : IDisposable
         GrantServerFolderAccess(Settings.Folder);
         var folders = await Get("config/folders");
         if (folders.AsArray().Any(f => f!["id"]!.GetValue<string>() == Settings.FolderId)) return;
-        if (folders.AsArray().Any(f => string.Equals(Path.GetFullPath(f!["path"]!.GetValue<string>()).TrimEnd('\\'), Path.GetFullPath(Settings.Folder).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)))
+        if (folders.AsArray().Any(f => SamePath(f!["path"]!.GetValue<string>(),Settings.Folder)))
             throw new IOException("This directory is already configured under another sync folder.");
         var folder = await Get("config/defaults/folder");
         folder["id"] = Settings.FolderId; folder["label"] = "Desksync"; folder["path"] = Settings.Folder;

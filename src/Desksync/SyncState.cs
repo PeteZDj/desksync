@@ -37,8 +37,8 @@ public sealed partial class Engine
         if (Settings.StoragePolicyVersion >= 1) return;
         var folders = await Get("config/folders");
         var folder = folders.AsArray().SingleOrDefault(f => f!["id"]!.ToString() == Settings.FolderId);
-        var disk = new DriveInfo(Path.GetPathRoot(Settings.Folder)!);
-        var metadata = new DriveInfo(Path.GetPathRoot(data)!);
+        var disk = DiskFor(Settings.Folder);
+        var metadata = DiskFor(data);
         var previousFolder = StoragePolicy.Required(folder?["minDiskFree"], disk.TotalSize);
         var previousMetadata = StoragePolicy.Required(optionsCache["minHomeDiskFree"], metadata.TotalSize);
         var changed = false;
@@ -134,7 +134,7 @@ public sealed partial class Engine
         var connections = (await Get("system/connections"))["connections"]!.AsObject();
         var config = (await Get("config/devices")).AsArray();
         JsonNode? summary = folder == null ? null : await Get("db/status?folder=" + Uri.EscapeDataString(Settings.FolderId));
-        var disk = new DriveInfo(Path.GetPathRoot(Settings.Folder)!); var metadata = new DriveInfo(Path.GetPathRoot(data)!);
+        var disk = DiskFor(Settings.Folder); var metadata = DiskFor(data);
         optionsCache ??= await Get("config/options");
         var reserve = StoragePolicy.Required(folder?["minDiskFree"], disk.TotalSize);
         var metadataReserve = StoragePolicy.Required(optionsCache["minHomeDiskFree"], metadata.TotalSize);

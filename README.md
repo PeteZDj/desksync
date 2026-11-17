@@ -1,8 +1,26 @@
 # Desksync
 
-Your files. Your server. A Windows desktop and server app by Afrosoftware, with encrypted synchronization powered by Syncthing.
+Your files. Your server. A desktop and server app by Afrosoftware, with encrypted synchronization powered by Syncthing. Windows desktop/server releases are available, with a new Linux desktop preview for connecting another computer to your server.
 
 [Download Windows setup 0.3.0](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.3.0-win-x64.exe) · [Checksum](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.3.0-win-x64.exe.sha256) · [Software page](https://afrosoftware.com/software/desksync)
+
+[Linux x64 preview 0.3.1](https://afrosoftware.com/downloads/desksync/Desksync-0.3.1-linux-x64.tar.gz) · [Linux ARM64 preview 0.3.1](https://afrosoftware.com/downloads/desksync/Desksync-0.3.1-linux-arm64.tar.gz) · [Linux setup and Dot instructions](docs/linux.md)
+
+## Screenshots
+
+Screenshots from the working Windows 0.2 interface. Current releases add the live transfer queues described below; these captures show the shared dashboard and setup design, not a completed transfer or a Linux runtime test.
+
+![Desksync Home with file counts, disk storage, devices and recent activity](docs/images/home.jpg)
+
+| Guided setup | Folder, account and update settings |
+| --- | --- |
+| ![Choose a desktop or server in the setup wizard](docs/images/setup.jpg) | ![Desksync storage, account, startup and update settings](docs/images/settings.jpg) |
+
+## Linux desktop preview
+
+Linux 0.3.1 shares the Windows dashboard and sync engine. It keeps offline files in `~/Desksync`, opens its dashboard in a local browser, and connects using Afrosoftware sign-in or a server connection file. The installer supports user systemd startup with a background-process fallback for cloud desktops such as OpenAI Dot's computer.
+
+Packages target glibc-based Linux x64 and ARM64. They are cross-compiled previews awaiting installation and transfer verification on the target Linux computer. Native tray integration and automatic Linux updates are not included yet. See the [Linux guide](docs/linux.md) for the install command, checksums, dependencies and limitations.
 
 ## What is new in 0.3
 
@@ -38,7 +56,7 @@ This is an **unsigned Windows x64 preview**. Windows SmartScreen may show an unk
 
 Quit the old tray app and install the current version once. Existing files, device certificates and folder identity are preserved. The old 0.1 app did not include an updater, so it cannot install this upgrade automatically. Subsequent releases can update from the tray app.
 
-The installer includes the .NET runtime. Microsoft Edge WebView2 is needed for the interface; setup downloads it from Microsoft and checks the Microsoft signature if it is missing. Windows Server 2025 and Windows 11 x64 are the initial targets. There are no Android, iPhone, Linux or macOS desktop releases in this version.
+The Windows installer includes the .NET runtime. Microsoft Edge WebView2 is needed for the Windows interface; setup downloads it from Microsoft and checks the Microsoft signature if it is missing. Windows Server 2025 and Windows 11 x64 are the initial Windows targets. Linux uses the separate preview above and does not require WebView2. Android, iPhone and macOS desktop releases are not available.
 
 ## Our private Afrosoftware installation
 

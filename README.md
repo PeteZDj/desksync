@@ -16,6 +16,10 @@ The local sync-engine API bypasses environment proxies, addressing the HTML-as-J
 
 ## Screenshots
 
+The standalone Linux 0.4.0 setup window, captured on a native Linux runner:
+
+![Desksync Linux desktop setup](docs/images/linux-desktop.png)
+
 Screenshots from the working Windows 0.2 interface. Current releases add the live transfer queues described below; these captures show the shared dashboard and setup design, not a completed transfer or a Linux runtime test.
 
 ![Desksync Home with file counts, disk storage, devices and recent activity](docs/images/home.jpg)

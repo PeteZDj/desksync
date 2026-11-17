@@ -45,5 +45,11 @@ foreach ($directory in @($data,'C:\Desksync')) {
     $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($serviceSid,'FullControl','ContainerInherit,ObjectInherit','None','Allow'))
     Set-Acl -LiteralPath $directory -AclObject $acl
 }
+foreach ($protocol in @('TCP','UDP')) {
+    $ruleName = 'Desksync-Sync-' + $protocol
+    if (-not (Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule -Name $ruleName -DisplayName ('Desksync encrypted sync ' + $protocol) -Group Desksync -Direction Inbound -Action Allow -Protocol $protocol -LocalPort 22000 -Program (Join-Path $install syncthing.exe) -Profile Any | Out-Null
+    }
+}
 Start-Service -Name DesksyncSync
 Write-Output 'DesksyncSync installed. C:\Desksync is ready; no remote device has been approved.'

@@ -17,7 +17,8 @@ static class ServerSetup
   Thread.Sleep(1500);
   Sc("create","DesksyncSync","binPath=","\""+serviceExe+"\"","start=","auto","obj=",@"NT AUTHORITY\LocalService","DisplayName=","Desksync file synchronization");Sc("sidtype","DesksyncSync","unrestricted");
   var sid=(SecurityIdentifier)new NTAccount(@"NT SERVICE\DesksyncSync").Translate(typeof(SecurityIdentifier));foreach(var path in new[]{@"C:\ProgramData\Desksync",folder}){var info=new DirectoryInfo(path);var acl=info.GetAccessControl();acl.AddAccessRule(new FileSystemAccessRule(sid,FileSystemRights.FullControl,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));info.SetAccessControl(acl);}
-  Sc("failure","DesksyncSync","reset=","86400","actions=","restart/5000/restart/15000/restart/30000");Sc("start","DesksyncSync");
+  Sc("failure","DesksyncSync","reset=","86400","actions=","restart/5000/restart/15000/restart/30000");
+  AllowSyncTraffic(Path.Combine(install,"syncthing.exe"));Sc("start","DesksyncSync");
   InstallTray(Path.Combine(install,"Desksync.exe"));
   Process.Start(new ProcessStartInfo(Path.Combine(install,"Desksync.exe")){UseShellExecute=true});
  }
@@ -26,6 +27,15 @@ static class ServerSetup
   var p=new ProcessStartInfo(Path.Combine(Environment.SystemDirectory,@"WindowsPowerShell\v1.0\powershell.exe")){UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};foreach(var arg in new[]{"-NoProfile","-NonInteractive","-Command","-"})p.ArgumentList.Add(arg);p.Environment["DESKSYNC_TRAY_EXE"]=exe;p.Environment["DESKSYNC_TRAY_USER"]=WindowsIdentity.GetCurrent().Name;
   using var process=Process.Start(p)!;process.StandardInput.WriteLine("$ErrorActionPreference='Stop';$a=New-ScheduledTaskAction -Execute $env:DESKSYNC_TRAY_EXE -Argument '--background';$t=New-ScheduledTaskTrigger -AtLogOn -User $env:DESKSYNC_TRAY_USER;$p=New-ScheduledTaskPrincipal -UserId $env:DESKSYNC_TRAY_USER -LogonType Interactive -RunLevel Highest;$s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([timespan]::Zero) -MultipleInstances IgnoreNew;Register-ScheduledTask -TaskName 'Afrosoftware Desksync Tray' -Action $a -Trigger $t -Principal $p -Settings $s -Description 'Desksync server owner tray. File sync runs separately as LocalService.' -Force | Out-Null");process.StandardInput.Close();var output=process.StandardOutput.ReadToEnd();var error=process.StandardError.ReadToEnd();process.WaitForExit();if(process.ExitCode!=0)throw new IOException("The sync service was installed, but Windows could not register the tray at sign-in: "+error);
   using var run=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run",true);run?.DeleteValue("Afrosoftware Desksync",false);
+ }
+ static void AllowSyncTraffic(string engine)
+ {
+  // Only the authenticated device-to-device transport; the administration API remains loopback-only.
+  foreach(var protocol in new[]{"TCP","UDP"}){
+   var p=new ProcessStartInfo(Path.Combine(Environment.SystemDirectory,"netsh.exe")){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
+   foreach(var arg in new[]{"advfirewall","firewall","add","rule","name=Desksync encrypted sync "+protocol,"dir=in","action=allow","program="+engine,"protocol="+protocol,"localport=22000","profile=any","enable=yes"})p.ArgumentList.Add(arg);
+   using var process=Process.Start(p)!;var output=process.StandardOutput.ReadToEnd();var error=process.StandardError.ReadToEnd();process.WaitForExit();if(process.ExitCode!=0)throw new IOException("Windows could not allow the encrypted sync port: "+output+error);
+  }
  }
  static void Sc(params string[] args){var start=new ProcessStartInfo(Path.Combine(Environment.SystemDirectory,"sc.exe")){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};foreach(var arg in args)start.ArgumentList.Add(arg);using var p=Process.Start(start)!;var output=p.StandardOutput.ReadToEnd();var error=p.StandardError.ReadToEnd();p.WaitForExit();if(p.ExitCode!=0)throw new IOException("Windows service setup failed: "+output+error);}
 }

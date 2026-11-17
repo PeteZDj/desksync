@@ -18,3 +18,16 @@ jobs:
           socket.once('error',e=>{console.error('FAIL Public sync TCP 22000:',e.code);process.exitCode=1;});
           socket.once('timeout',()=>{console.error('FAIL Public sync TCP 22000: timeout');socket.destroy();process.exitCode=1;});
           JS
+      - name: Verify the public sign-in certificate
+        if: always()
+        run: |
+          node <<'JS'
+          const tls=require('node:tls');
+          const socket=tls.connect({host:'afrosoftware.com',port:443,servername:'afrosoftware.com',rejectUnauthorized:true},()=>{
+            const cert=socket.getPeerCertificate();
+            console.log(JSON.stringify({host:'afrosoftware.com',trusted:socket.authorized,issuer:cert.issuer,expires:cert.valid_to,fingerprint256:cert.fingerprint256}));
+            socket.end();
+          });
+          socket.setTimeout(12000,()=>socket.destroy(Error('TLS timeout')));
+          socket.on('error',e=>{console.error('Public TLS validation failed:',e.code||e.message);process.exitCode=1;});
+          JS

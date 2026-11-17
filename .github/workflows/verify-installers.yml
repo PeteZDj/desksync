@@ -5,6 +5,10 @@ on:
       build_run:
         description: Desktop installers run ID
         required: true
+      matrix:
+        description: Native runner matrix (JSON)
+        default: '[{"runner":"ubuntu-24.04","platform":"linux","arch":"x64"},{"runner":"ubuntu-24.04-arm","platform":"linux","arch":"arm64"},{"runner":"macos-15-intel","platform":"mac","arch":"x64"},{"runner":"macos-15","platform":"mac","arch":"arm64"}]'
+        required: true
 permissions:
   contents: read
   actions: read
@@ -13,19 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: ubuntu-24.04
-            platform: linux
-            arch: x64
-          - runner: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
-          - runner: macos-15-intel
-            platform: mac
-            arch: x64
-          - runner: macos-15
-            platform: mac
-            arch: arm64
+        include: ${{ fromJSON(inputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
@@ -62,8 +54,10 @@ jobs:
           NO_PROXY: ''
         run: |
           ditto -x -k package/desktop-release/*.zip unpacked
-          codesign --verify --deep --strict unpacked/Desksync.app
-          unpacked/Desksync.app/Contents/MacOS/desksync-desktop --smoke-test
+          bundle=$(find unpacked -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$bundle"
+          codesign --verify --deep --strict "$bundle"
+          "$bundle/Contents/MacOS/desksync-desktop" --smoke-test
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:

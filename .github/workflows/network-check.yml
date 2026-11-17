@@ -1,0 +1,20 @@
+name: Check sync server reachability
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  connectivity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Test the public encrypted sync port
+        run: |
+          node <<'JS'
+          const net=require('node:net');
+          const socket=net.createConnection({host:'74.50.66.118',port:22000});
+          socket.setTimeout(12000);
+          socket.once('connect',()=>{console.log('PASS Public sync TCP 22000 is reachable from an external Linux runner.');socket.destroy();});
+          socket.once('error',e=>{console.error('FAIL Public sync TCP 22000:',e.code);process.exitCode=1;});
+          socket.once('timeout',()=>{console.error('FAIL Public sync TCP 22000: timeout');socket.destroy();process.exitCode=1;});
+          JS

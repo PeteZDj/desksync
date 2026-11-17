@@ -1,6 +1,6 @@
 # Desksync
 
-Your files. Your server. A desktop and server app by Afrosoftware, with encrypted synchronization powered by Syncthing. Windows desktop/server releases are available, with a new Linux desktop preview for connecting another computer to your server.
+Your files. Your server. A desktop and server app by Afrosoftware, with encrypted synchronization powered by Syncthing. Windows desktop/server releases and Linux/macOS desktop previews are available.
 
 [Download Windows setup 0.3.0](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.3.0-win-x64.exe) · [Checksum](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.3.0-win-x64.exe.sha256) · [Software page](https://afrosoftware.com/software/desksync)
 
@@ -102,7 +102,7 @@ Connection files contain a device identity and folder ID, not a password or acce
 
 ## Automatic updates
 
-The tray application checks signed metadata on the official website and published GitHub releases at startup and every four hours while running. Automatic downloads/installations are enabled by default and can be disabled in Settings. You can also choose **Help → Check for updates**. The app shows update state and download progress; it waits for the local sync engine to become idle before an automatic restart.
+The Windows tray application checks signed metadata on the official website and published GitHub releases at startup and every four hours while running. Automatic downloads/installations are enabled by default and can be disabled in Settings. You can also choose **Help → Check for updates**. The app shows update state and download progress; it waits for the local sync engine to become idle before an automatic restart.
 
 Before running an update, Desksync verifies signed release metadata with an embedded RSA public key, checks the package size and SHA-256, and rejects unsafe archive paths and non-newer versions. The updater keeps the archive open against modification while verifying and extracting it. Server staging and helper binaries use a protected Program Files location. Sync data, private engine configuration and account tokens are not part of application replacement.
 

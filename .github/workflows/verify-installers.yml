@@ -1,0 +1,72 @@
+name: Verify desktop installers
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: Desktop installers run ID
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  installed:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          - runner: macos-15-intel
+            platform: mac
+            arch: x64
+          - runner: macos-15
+            platform: mac
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          run-id: ${{ inputs.build_run }}
+          github-token: ${{ github.token }}
+          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: package
+      - name: Install Debian package
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb dbus-x11 ./package/desktop-release/*.deb
+      - name: Test installed Linux desktop
+        if: matrix.platform == 'linux'
+        env:
+          DESKSYNC_TEST_STATE: ${{ runner.temp }}/desksync-installed-test
+          DESKSYNC_SMOKE_OUTPUT: ${{ github.workspace }}/proof/installed-linux-${{ matrix.arch }}.json
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          NO_PROXY: ''
+        run: xvfb-run -a dbus-run-session -- desksync-desktop --smoke-test
+      - name: Open packaged Mac application
+        if: matrix.platform == 'mac'
+        env:
+          DESKSYNC_TEST_STATE: ${{ runner.temp }}/desksync-installed-test
+          DESKSYNC_SMOKE_OUTPUT: ${{ github.workspace }}/proof/installed-mac-${{ matrix.arch }}.json
+          HTTP_PROXY: http://127.0.0.1:9
+          HTTPS_PROXY: http://127.0.0.1:9
+          NO_PROXY: ''
+        run: |
+          ditto -x -k package/desktop-release/*.zip unpacked
+          codesign --verify --deep --strict unpacked/Desksync.app
+          unpacked/Desksync.app/Contents/MacOS/desksync-desktop --smoke-test
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: installed-${{ matrix.platform }}-${{ matrix.arch }}
+          path: proof
+          if-no-files-found: warn

@@ -1,3 +1,7 @@
+# Legacy browser-only Linux preview
+
+**For the installable desktop app with its own window, icon and tray controls, use the [0.4.0 desktop guide](desktop.md).** The 0.3 instructions below describe the earlier background service and browser dashboard.
+
 # Desksync for Linux — 0.3.2 preview
 
 This Linux desktop client connects to your existing Desksync server. Files live in `~/Desksync` by default. Home, activity, devices, account and settings open at **http://127.0.0.1:5392** in the Linux computer's browser. Closing the tab leaves synchronization running.

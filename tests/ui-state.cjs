@@ -13,7 +13,7 @@ show({errors:1,issues:[{Code:'metadata-space',Message:'The sync index needs more
 show({transfers:[{Name:'<script>alert(1)</script>.bin',Direction:'upload',DeviceId:'peer',DeviceName:'Desktop',BytesTotal:100,BytesDone:50,Percent:50,State:'active'}]});check(app.innerHTML.includes('Uploading your files')&&app.innerHTML.includes('50%'),'Active upload shows direction and percentage');check(!app.innerHTML.includes('<script>alert(1)</script>')&&app.innerHTML.includes('&lt;script&gt;'),'Untrusted filenames are escaped in transfer markup');
 click({action:'rescan'});check(messages.some(m=>m.action==='rescan'),'Scan now invokes the native scan command');click({action:'storage'});check(scrolled&&app.innerHTML.includes('folder reserve'),'Storage metric opens the reserve and folder settings');
 receive({data:{...structuredClone(base),platform:'linux',managed:false,automaticUpdates:false,updates:{phase:'manual',message:'Linux preview updates are installed manually.'}}});
-click({page:'settings'});check(app.innerHTML.includes('Start with Linux')&&!app.innerHTML.includes('id="auto-updates"'),'Linux settings explain startup and omit the unsupported automatic-update toggle');
+click({page:'settings'});check(app.innerHTML.includes('Start at login')&&!app.innerHTML.includes('id="auto-updates"'),'Linux settings explain startup and omit the unsupported automatic-update toggle');
 receive({data:{...structuredClone(base),platform:'linux',managed:false,sync:{...structuredClone(base.sync),setupCompleted:false,role:'desktop',folder:'/home/test/Desksync'}}});
 check(!app.innerHTML.includes('data-role="server"')&&app.innerHTML.includes('This is my desktop'),'Linux preview offers only the supported desktop role');
 console.log(checks+' renderer contract checks passed.');

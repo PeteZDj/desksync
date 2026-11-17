@@ -33,7 +33,10 @@ jobs:
           dotnet-version: '10.0.x'
       - run: npm ci --no-audit --no-fund
         working-directory: src/Desksync.Desktop
+      - run: node node_modules/electron/install.js
+        working-directory: src/Desksync.Desktop
       - run: node --test tests/desktop.test.cjs
+      - run: node tests/ui-state.cjs
       - run: node scripts/prepare-desktop.cjs
       - name: Linux GUI dependencies and Chromium sandbox
         if: matrix.platform == 'linux'

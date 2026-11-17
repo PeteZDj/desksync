@@ -3,6 +3,8 @@ const {app,BrowserWindow,Menu,Tray,nativeImage,dialog,ipcMain,shell,session}=req
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),http=require('node:http'),crypto=require('node:crypto'),{spawn}=require('node:child_process');
 const {allowedExternal,localPage,validConnection}=require('./policy.cjs');
 app.setName('Desksync');
+// Software compositing also works on remote/cloud Linux desktops without a GPU.
+if(process.platform==='linux')app.disableHardwareAcceleration();
 let win,tray,backend,origin,token,closing=false,starting=false,pollTimer,logTail='',lastState,backendExited=false;
 const background=process.argv.includes('--background'),smoke=process.argv.includes('--smoke-test');
 const smokeOutput=process.env.DESKSYNC_SMOKE_OUTPUT;

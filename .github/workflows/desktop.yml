@@ -53,7 +53,7 @@ jobs:
           HTTP_PROXY: http://127.0.0.1:9
           HTTPS_PROXY: http://127.0.0.1:9
           NO_PROXY: ''
-        run: xvfb-run -a src/Desksync.Desktop/node_modules/.bin/electron src/Desksync.Desktop --smoke-test
+        run: xvfb-run -a dbus-run-session -- src/Desksync.Desktop/node_modules/.bin/electron src/Desksync.Desktop --smoke-test
       - name: Native macOS desktop smoke test
         if: matrix.platform == 'mac'
         env:

@@ -42,6 +42,25 @@ async Task Options(Engine engine, int rate)
 }
 try
 {
+    var fileRoot = Path.Combine(root, "file-actions"); Directory.CreateDirectory(fileRoot);
+    var nested = Path.Combine(fileRoot, "Nested folder"); Directory.CreateDirectory(nested);
+    File.WriteAllText(Path.Combine(nested, "Hello # 世界.txt"), "File action fixture");
+    Check(LocalFiles.Resolve(fileRoot, "Nested folder/Hello # 世界.txt") == Path.Combine(nested, "Hello # 世界.txt"), "File actions preserve spaces, Unicode and punctuation");
+    Check(LocalFiles.Describe(fileRoot, "Nested folder").IsDirectory, "Local folders can be opened");
+    Check(!LocalFiles.Describe(fileRoot, "missing.txt").Available && !File.Exists(Path.Combine(fileRoot,"missing.txt")), "Unavailable files are not created by file actions");
+    foreach(var bad in new[]{"../outside.txt", @"..\outside.txt", "/etc/passwd", @"C:\Windows\win.ini", @"\\server\share\item", "file:///bad", "Nested folder/../outside.txt", "file.txt:stream", "CON", "NUL.txt", "file.txt.", "line\nbreak.txt"})
+    {
+        var rejected=false;try{LocalFiles.Resolve(fileRoot,bad,false);}catch(IOException){rejected=true;}Check(rejected,"File action rejects unsafe paths: "+bad.Replace("\n","\\n"));
+    }
+    var outside=Path.Combine(root,"outside");Directory.CreateDirectory(outside);File.WriteAllText(Path.Combine(outside,"private.txt"),"Outside the sync folder");
+    var link=Path.Combine(fileRoot,"linked");Directory.CreateSymbolicLink(link,outside);
+    Check(!LocalFiles.Describe(fileRoot,"linked/private.txt").Available,"File actions cannot follow a link outside the sync folder");
+    var nativeIcons=new WindowsFileIcons();
+    foreach(var name in new[]{"Nested folder", "archive.zip", "page.html", "document.pdf", "Nested folder/Hello # 世界.txt"})
+    {
+        var bytes=nativeIcons.Read(fileRoot,name);Check(bytes is {Length:>100}&&bytes.Take(8).SequenceEqual(new byte[]{137,80,78,71,13,10,26,10}),"Windows shell provides a PNG icon for "+name);
+    }
+    Check(LocalFiles.ActivityPath(new("id","", "peer.txt", "Device connected","complete",""))==null,"Device activity is not treated as a local file");
     var inherited=JsonNode.Parse("{\"value\":1,\"unit\":\"%\"}")!;
     Check(StoragePolicy.Required(inherited,1_800_000_000_000)==18_000_000_000,"Inherited percentage reserve blocks a 1.8 TB disk with 6.3 GB free");
     Check(6_300_000_000>StoragePolicy.FolderReserve&&6_300_000_000>StoragePolicy.MetadataReserve,"Fixed reserves leave room for files on a large nearly full disk");

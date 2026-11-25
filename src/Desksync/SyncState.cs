@@ -63,9 +63,9 @@ public sealed partial class Engine
         if (!response.IsSuccessStatusCode) throw new IOException("The folder could not be scanned. Check the storage and folder errors shown below.");
     }
 
-    void AddActivity(string id, string name, string action, string status = "complete", string detail = "")
+    void AddActivity(string id, string name, string action, string status = "complete", string detail = "", DateTimeOffset? at = null)
     {
-        if (!activity.Any(a => a.Id == id)) activity.Insert(0, new(id, DateTimeOffset.UtcNow.ToString("o"), name, action, status, detail));
+        if (!activity.Any(a => a.Id == id)) activity.Insert(0, new(id, (at ?? DateTimeOffset.UtcNow).ToString("o"), name, action, status, detail));
     }
 
     async Task ReadEvents()
@@ -121,7 +121,7 @@ public sealed partial class Engine
             if (kind == "ItemFinished") transfers.Remove("download|" + nameValue);
             var text = kind == "LocalChangeDetected" ? action.Contains("delete") ? "Deleted locally" : "Changed locally" : kind == "ItemFinished" ? action == "delete" ? "Deletion received" : "Downloaded" : kind == "DeviceConnected" ? "Device connected" : kind == "DeviceDisconnected" ? "Device disconnected" : "Folder needs attention";
             if (kind == "DeviceConnected" || kind == "DeviceDisconnected") nameValue = body["deviceName"]?.ToString() ?? "Device connection";
-            AddActivity(e["time"]!.ToString() + "|" + kind + "|" + nameValue, nameValue, text, error.Length > 0 || kind == "FolderErrors" ? "error" : "complete", error);
+            AddActivity(e["time"]!.ToString() + "|" + kind + "|" + nameValue, nameValue, text, error.Length > 0 || kind == "FolderErrors" ? "error" : "complete", error, at);
         }
         if (activity.Count > 200) activity.RemoveRange(200, activity.Count - 200);
         var filePath = Path.Combine(data, "activity.json"); File.WriteAllText(filePath + ".tmp", JsonSerializer.Serialize(activity)); File.Move(filePath + ".tmp", filePath, true);
@@ -222,7 +222,8 @@ public sealed partial class Engine
         var presentation = paused ? "paused" : issues.Count > 0 ? "attention" : !configured.Any(d => connections[d!["deviceID"]!.ToString()]?["connected"]?.GetValue<bool>() == true) ? "offline" : phase.Contains("scan", StringComparison.OrdinalIgnoreCase) ? "scanning" : uploadNeededItems > 0 || (summary?["needTotalItems"]?.GetValue<long>() ?? 0) > 0 || active.Length > 0 ? "syncing" : "up-to-date";
         JsonNode? health = null;
         try { var healthFile = Path.Combine(data, "device-health.json"); if (File.Exists(healthFile)) health = JsonNode.Parse(await File.ReadAllTextAsync(healthFile)); } catch (Exception e) when (e is IOException or JsonException) { }
-        return new { deviceId = DeviceId, deviceName = Settings.DeviceName, folder = Settings.Folder, folderId = Settings.FolderId, role = Settings.Role, provider = Settings.Provider, setupCompleted = Settings.SetupCompleted, paused, phase, presentation, files = summary?["localFiles"]?.GetValue<long>() ?? 0, bytes = summary?["localBytes"]?.GetValue<long>() ?? 0, globalBytes = summary?["globalBytes"]?.GetValue<long>() ?? 0, neededBytes = summary?["needBytes"]?.GetValue<long>() ?? 0, uploadNeededBytes, uploadNeededItems, needed = summary?["needTotalItems"]?.GetValue<long>() ?? 0, errors = issues.Count, issues, diskTotal = disk.TotalSize, diskFree = disk.AvailableFreeSpace, folderReserveBytes = reserve, metadataFree = metadata.AvailableFreeSpace, metadataReserveBytes = metadataReserve, storageMigration = Settings.StorageMigration, devices = deviceList, transfers = active, uploadRate = sentRate, downloadRate = receivedRate, peerHealth = health, activity = activity.Take(100).ToArray() };
+        var localItems = activity.Take(100).Select(LocalFiles.ActivityPath).Concat(active.Select(t => t.Name)).OfType<string>().Distinct(StringComparer.Ordinal).ToDictionary(name => name, name => LocalFiles.Describe(Settings.Folder, name), StringComparer.Ordinal);
+        return new { deviceId = DeviceId, deviceName = Settings.DeviceName, folder = Settings.Folder, folderId = Settings.FolderId, role = Settings.Role, provider = Settings.Provider, setupCompleted = Settings.SetupCompleted, paused, phase, presentation, files = summary?["localFiles"]?.GetValue<long>() ?? 0, bytes = summary?["localBytes"]?.GetValue<long>() ?? 0, globalBytes = summary?["globalBytes"]?.GetValue<long>() ?? 0, neededBytes = summary?["needBytes"]?.GetValue<long>() ?? 0, uploadNeededBytes, uploadNeededItems, needed = summary?["needTotalItems"]?.GetValue<long>() ?? 0, errors = issues.Count, issues, diskTotal = disk.TotalSize, diskFree = disk.AvailableFreeSpace, folderReserveBytes = reserve, metadataFree = metadata.AvailableFreeSpace, metadataReserveBytes = metadataReserve, storageMigration = Settings.StorageMigration, devices = deviceList, transfers = active, uploadRate = sentRate, downloadRate = receivedRate, peerHealth = health, localItems, activity = activity.Take(100).ToArray() };
     }
 }
 

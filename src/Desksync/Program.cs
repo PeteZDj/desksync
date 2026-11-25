@@ -15,7 +15,7 @@ internal static class Program
   using var service=Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\DesksyncSync");var managed=service!=null&&(Option("--data")==null||string.Equals(Option("--data"),@"C:\ProgramData\Desksync",StringComparison.OrdinalIgnoreCase));
   var home=Option("--data")??(managed?@"C:\ProgramData\Desksync":Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Afrosoftware","Desksync"));
   using var singleton=new Mutex(true,"Local\\Desksync-"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(home.ToLowerInvariant())))[..16],out var first);if(!first){var existing=FindWindow(null,"Desksync");if(existing!=IntPtr.Zero){ShowWindow(existing,9);SetForegroundWindow(existing);}return;}
-  try{using var engine=new Engine(home,Option("--folder"));if(args.Contains("--initialize")){engine.Initialize().GetAwaiter().GetResult();engine.CompleteSetup(managed||args.Contains("--server")?"server":"desktop","selfhost");return;}Application.Run(new DesktopWindow(engine,managed,args.Contains("--background")));}
+  try{using var engine=new Engine(home,Option("--folder"),int.Parse(Option("--engine-port")??"5391"));if(args.Contains("--initialize")){engine.Initialize().GetAwaiter().GetResult();engine.CompleteSetup(managed||args.Contains("--server")?"server":"desktop","selfhost");return;}Application.Run(new DesktopWindow(engine,managed,args.Contains("--background"),Option("--data")!=null&&!managed?Path.Combine(home,"desktop-ui"):null));}
   catch(Exception e){MessageBox.Show(e is UnauthorizedAccessException?"This is a managed server. Open Desksync as administrator to manage its private settings. Synchronization continues in the Windows service.":e.Message,"Desksync needs attention");Environment.ExitCode=1;}
  }
  [System.Runtime.InteropServices.DllImport("user32.dll",CharSet=System.Runtime.InteropServices.CharSet.Unicode)]static extern IntPtr FindWindow(string? className,string title);
@@ -25,13 +25,15 @@ internal static class Program
 sealed class DesktopWindow:Form
 {
  const string Origin="https://app.desksync.local";
+ const string IconOrigin="https://icons.desksync.local";
+ readonly WindowsFileIcons fileIcons=new();
     readonly Engine engine;readonly bool managed,background;readonly Account account;readonly Updates updates;readonly string userHome;
  readonly WebView2 view=new(){Dock=DockStyle.Fill,DefaultBackgroundColor=Color.FromArgb(247,249,252)};
  readonly NotifyIcon tray;readonly System.Windows.Forms.Timer iconTimer=new(){Interval=500};Icon? statusIcon;JsonNode? lastSnapshot;ToolStripItem? trayHeader;readonly Dictionary<string,ToolStripItem> trayTransfers=[];string iconPhase="idle",lastIssue="";int iconFrame;DateTimeOffset healthChecked;bool reportingHealth;readonly System.Windows.Forms.Timer timer=new(){Interval=2500};
  bool ready,refreshing,quitting,updateCheckRunning,updateReady,autoInstall,uiLoaded,snapshotHealthy;DateTimeOffset updateChecked;string? error,notice;CancellationTokenSource? signIn;object? signInState;DateTimeOffset accountChecked;
- public DesktopWindow(Engine engine,bool managed,bool background)
+ public DesktopWindow(Engine engine,bool managed,bool background,string? stateHome=null)
  {
-  this.engine=engine;this.managed=managed;this.background=background;userHome=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Afrosoftware","DesksyncDesktop");Directory.CreateDirectory(userHome);Engine.Restrict(userHome);account=new Account(userHome);updates=new Updates(userHome);Text="Desksync";Size=new Size(1080,770);MinimumSize=new Size(900,650);StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(247,249,252);Icon=Brand.Icon();Controls.Add(view);AddMenus();
+  this.engine=engine;this.managed=managed;this.background=background;userHome=stateHome??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Afrosoftware","DesksyncDesktop");Directory.CreateDirectory(userHome);Engine.Restrict(userHome);account=new Account(userHome);updates=new Updates(userHome);Text="Desksync";Size=new Size(1080,770);MinimumSize=new Size(900,650);StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(247,249,252);Icon=Brand.Icon();Controls.Add(view);AddMenus();
   var menu=BuildTrayMenu();
   tray=new NotifyIcon{Icon=Icon,Text="Desksync · starting",Visible=true,ContextMenuStrip=menu};tray.MouseClick+=(_,e)=>{if(e.Button==MouseButtons.Left)ShowPage(lastSnapshot?["presentation"]?.ToString()=="syncing"?"activity":lastSnapshot?["errors"]?.GetValue<int>()>0?"notifications":"home");};tray.DoubleClick+=(_,_)=>ShowPage("activity");iconTimer.Tick+=(_,_)=>{if(iconPhase=="syncing")SetTrayIcon();};iconTimer.Start();FormClosing+=(_,e)=>{if(!quitting&&e.CloseReason==CloseReason.UserClosing){e.Cancel=true;Hide();}};FormClosed+=(_,_)=>{timer.Dispose();iconTimer.Dispose();tray.Dispose();statusIcon?.Dispose();signIn?.Cancel();account.Dispose();view.Dispose();};Shown+=async(_,_)=>{if(background)Hide();await Start();};timer.Tick+=async(_,_)=>{await RefreshState();if(autoInstall&&updateReady)await ApplyUpdateIfIdle();if(DateTimeOffset.UtcNow-updateChecked>TimeSpan.FromHours(4)){updateChecked=DateTimeOffset.UtcNow;_=CheckUpdates(true);}};
  }
@@ -43,6 +45,12 @@ sealed class DesktopWindow:Form
    Directory.CreateDirectory(runtimeHome);if(managed){var acl=new System.Security.AccessControl.DirectorySecurity();acl.SetAccessRuleProtection(true,false);foreach(var sid in new[]{new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.LocalSystemSid,null),new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid,null)})acl.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(sid,System.Security.AccessControl.FileSystemRights.FullControl,System.Security.AccessControl.InheritanceFlags.ContainerInherit|System.Security.AccessControl.InheritanceFlags.ObjectInherit,System.Security.AccessControl.PropagationFlags.None,System.Security.AccessControl.AccessControlType.Allow));new DirectoryInfo(runtimeHome).SetAccessControl(acl);}
    var assembly=Assembly.GetExecutingAssembly();var ui=Path.Combine(runtimeHome,"ui-"+Assembly.GetExecutingAssembly().GetName().Version!.ToString(3));Directory.CreateDirectory(ui);foreach(var name in new[]{"index.html","app.js","styles.css"}){using var source=assembly.GetManifestResourceStream("Desksync.UI."+name)!;using var target=File.Create(Path.Combine(ui,name));await source.CopyToAsync(target);}
    var environment=await CoreWebView2Environment.CreateAsync(null,Path.Combine(runtimeHome,"WebView2"),new CoreWebView2EnvironmentOptions("--disable-extensions"));await view.EnsureCoreWebView2Async(environment);var core=view.CoreWebView2;core.SetVirtualHostNameToFolderMapping("app.desksync.local",ui,CoreWebView2HostResourceAccessKind.DenyCors);
+   core.AddWebResourceRequestedFilter(IconOrigin+"/file-icon?*",CoreWebView2WebResourceContext.Image);
+   core.WebResourceRequested+=(_,e)=>{
+    if(!e.Request.Uri.StartsWith(IconOrigin+"/file-icon?path=",StringComparison.Ordinal))return;
+    try{var name=Uri.UnescapeDataString(new Uri(e.Request.Uri).Query[6..]);var bytes=fileIcons.Read(engine.Settings.Folder,name);e.Response=core.Environment.CreateWebResourceResponse(bytes==null?null:new MemoryStream(bytes),bytes==null?404:200,bytes==null?"Not Found":"OK","Content-Type: image/png\r\nCache-Control: private, max-age=60\r\nX-Content-Type-Options: nosniff");}
+    catch(Exception ex)when(ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException){e.Response=core.Environment.CreateWebResourceResponse(null,404,"Not Found","");}
+   };
    core.Settings.AreHostObjectsAllowed=false;core.Settings.AreDevToolsEnabled=false;core.Settings.AreDefaultContextMenusEnabled=false;core.Settings.AreDefaultScriptDialogsEnabled=false;core.Settings.IsStatusBarEnabled=false;core.NavigationStarting+=(_,e)=>{if(!e.Uri.StartsWith(Origin+"/",StringComparison.Ordinal))e.Cancel=true;};core.FrameNavigationStarting+=(_,e)=>e.Cancel=true;core.NewWindowRequested+=(_,e)=>e.Handled=true;core.PermissionRequested+=(_,e)=>e.State=CoreWebView2PermissionState.Deny;core.WebMessageReceived+=async(_,e)=>{if(e.Source.StartsWith(Origin+"/",StringComparison.Ordinal))await Command(e.WebMessageAsJson);};core.Navigate(Origin+"/index.html");
    await engine.Initialize(engine.Settings.SetupCompleted||managed);if(managed&&(!engine.Settings.SetupCompleted||engine.Settings.Role!="server"))engine.CompleteSetup("server",engine.Settings.Provider);if(!engine.Settings.SetupCompleted&&(await engine.Get("config/folders")).AsArray().Any(f=>f!["id"]!.GetValue<string>()==engine.Settings.FolderId&&f["devices"]!.AsArray().Count>1))engine.CompleteSetup("desktop");ready=true;await RefreshState();timer.Start();MarkUpdateHealthy();updateChecked=DateTimeOffset.UtcNow;_=CheckUpdates(true);
   }
@@ -92,7 +100,7 @@ sealed class DesktopWindow:Form
    var snapshot=JsonSerializer.SerializeToNode(await engine.Snapshot())!;
    if(account.Session!=null&&DateTimeOffset.UtcNow-healthChecked>TimeSpan.FromSeconds(15)){healthChecked=DateTimeOffset.UtcNow;_=ReportStatus(snapshot.DeepClone());}
    PeerHealth.Merge(snapshot,account.Session?.Server["peerHealth"]);lastSnapshot=snapshot;snapshotHealthy=true;
-   Push(new{type="state",sync=snapshot,account=account.Public,managed,error,notice,signIn=signInState,updates=updates.State,automaticUpdates=updates.Automatic,version=Assembly.GetExecutingAssembly().GetName().Version!.ToString(3)});
+   Push(new{type="state",sync=snapshot,account=account.Public,managed,error,notice,signIn=signInState,updates=updates.State,automaticUpdates=updates.Automatic,platform="windows",version=Assembly.GetExecutingAssembly().GetName().Version!.ToString(3)});
    var active=snapshot["transfers"]!.AsArray().Any(t=>t?["State"]?.ToString()=="active");var nextPhase=snapshot["paused"]!.GetValue<bool>()?"paused":snapshot["errors"]!.GetValue<int>()>0?"error":active?"syncing":snapshot["presentation"]?.ToString()=="syncing"?"pending":snapshot["presentation"]?.ToString()=="offline"?"offline":"idle";
    if(nextPhase!=iconPhase){iconPhase=nextPhase;SetTrayIcon();}
    var tooltip="Desksync · "+TraySummary();tray.Text=tooltip[..Math.Min(63,tooltip.Length)];
@@ -109,6 +117,8 @@ sealed class DesktopWindow:Form
    {
     case "rescan":await engine.Rescan();notice="Scan requested. New files and queued changes will be checked.";break;
     case "open-folder":OpenFolder(engine.Settings.Folder);break;
+    case "open-item":var localPath=LocalFiles.Resolve(engine.Settings.Folder,m["path"]?.ToString()??"");Process.Start(new ProcessStartInfo(localPath){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(localPath)});break;
+    case "reveal-item":var revealPath=LocalFiles.Resolve(engine.Settings.Folder,m["path"]?.ToString()??"");Process.Start(new ProcessStartInfo("explorer.exe"){UseShellExecute=true,Arguments="/select,\""+revealPath+"\""});break;
     case "pause":await engine.Pause(m["paused"]?.GetValue<bool>()==true);break;
     case "browse":using(var picker=new FolderBrowserDialog{Description="Choose your Desksync folder",UseDescriptionForTitle=true,SelectedPath=engine.Settings.Folder})if(picker.ShowDialog(this)==DialogResult.OK)Push(new{type="folder-picked",path=picker.SelectedPath});break;
     case "configure":

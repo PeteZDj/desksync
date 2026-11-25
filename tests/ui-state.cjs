@@ -17,3 +17,21 @@ click({page:'settings'});check(app.innerHTML.includes('Start at login')&&!app.in
 receive({data:{...structuredClone(base),platform:'linux',managed:false,sync:{...structuredClone(base.sync),setupCompleted:false,role:'desktop',folder:'/home/test/Desksync'}}});
 check(!app.innerHTML.includes('data-role="server"')&&app.innerHTML.includes('This is my desktop'),'Linux preview offers only the supported desktop role');
 console.log(checks+' renderer contract checks passed.');
+
+// File operations use the full relative path, not the truncated display name.
+click({page:'activity'});
+const file='Nested folder/Hello # 世界.zip',ago=new Date(Date.now()-5*60*1000).toISOString();
+receive({data:{...structuredClone(base),platform:'windows',sync:{...structuredClone(base.sync),localItems:{[file]:{Available:true,IsDirectory:false},'Nested folder':{Available:true,IsDirectory:true}},activity:[{Name:file,Time:ago,Action:'Downloaded',Status:'complete'},{Name:'Nested folder',Time:ago,Action:'Changed locally',Status:'complete'},{Name:'deleted.txt',Time:ago,Action:'Deleted locally',Status:'complete'},{Name:'peer.txt',Time:ago,Action:'Device connected',Status:'complete'}]}}});
+check(app.innerHTML.includes('5 minutes ago')&&app.innerHTML.includes('<time datetime=')&&app.innerHTML.includes('activity-date'),'Activity shows relative time and retains the exact timestamp');
+check(app.innerHTML.includes('src="https://icons.desksync.local/file-icon?path='+encodeURIComponent(file)+'"'),'Windows file icons are loaded from the local native shell endpoint');
+check(app.innerHTML.includes('data-file-action="open-item"')&&app.innerHTML.includes('Show in Explorer'),'Existing files expose open and reveal actions');
+click({fileAction:'open-item',path:file});check(messages.at(-1).action==='open-item'&&messages.at(-1).path===file,'Open preserves the full Unicode relative path');
+click({fileAction:'reveal-item',path:file});check(messages.at(-1).action==='reveal-item'&&messages.at(-1).path===file,'Reveal invokes the native file manager action');
+check(app.innerHTML.includes('Not available locally')&&!app.innerHTML.includes('data-path="deleted.txt" title="Open'),'Deleted files have no open action');
+check(!app.innerHTML.includes('data-path="peer.txt"'),'Device events never have file actions');
+const relative=(value,now)=>vm.runInContext('relativeTime('+JSON.stringify(value)+','+now+')',context),now=Date.now();
+for(const [seconds,label] of [[0,'Just now'],[59,'Just now'],[60,'1 minute ago'],[120,'2 minutes ago'],[3599,'59 minutes ago'],[3600,'1 hour ago'],[86400,'1 day ago'],[172800,'2 days ago']])check(relative(new Date(now-seconds*1000).toISOString(),now)===label,'Relative time boundary: '+label);
+check(relative('invalid',now)==='Time unavailable','Invalid timestamps do not display NaN');
+check(relative(new Date(now+60000).toISOString(),now)==='Just now','Future clock skew does not display negative minutes');
+check(relative(ago,now+60000)==='6 minutes ago','Relative ages advance without changing event timestamps');
+console.log(checks+' total renderer checks passed.');

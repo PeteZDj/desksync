@@ -7,6 +7,7 @@
   <ItemGroup>
     <Compile Include="../Desksync/Engine.cs" Link="Engine.cs"/><Compile Include="../Desksync/Experience.cs" Link="Experience.cs"/>
     <Compile Include="../Desksync/SyncState.cs" Link="SyncState.cs"/><Compile Include="../Desksync/Account.cs" Link="Account.cs"/>
+    <Compile Include="../Desksync/LocalFiles.cs" Link="LocalFiles.cs"/>
     <EmbeddedResource Include="../Desksync/UI/*" Link="UI/%(Filename)%(Extension)" LogicalName="Desksync.UI.%(Filename)%(Extension)"/>
     <EmbeddedResource Include="bridge.js" LogicalName="Desksync.UI.bridge.js"/>
   </ItemGroup>

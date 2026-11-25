@@ -61,6 +61,8 @@ app.MapPost("/api/command",async(HttpRequest request)=>{
  case "advanced-pair":await engine.EnsureFolder();await engine.Pair(Pairing.Parse(m["code"]?.ToString()??""),true);engine.CompleteSetup("desktop","selfhost");notice="Server added. Save this computer's connection file and approve it on your server.";break;
  case "save-connection":return Results.Json(new{type="connection",code=engine.Code.Encode()});
  case "open-folder":Open(engine.Settings.Folder);notice="Folder: "+engine.Settings.Folder;break;
+ case "open-item":Open(LocalFiles.Resolve(engine.Settings.Folder,m["path"]?.ToString()??""));break;
+ case "reveal-item":var localPath=LocalFiles.Resolve(engine.Settings.Folder,m["path"]?.ToString()??"");Open(Path.GetDirectoryName(localPath)!);break;
  case "versions":var versions=Path.Combine(engine.Settings.Folder,".stversions");if(!Directory.Exists(versions))throw new IOException("No retained versions yet.");Open(versions);break;
  case "remove-device":await engine.Forget(m["id"]?.ToString()??"");break;
  case "disconnect":if(signingIn!=null)throw new IOException("Cancel sign-in first.");await engine.Pause(true);await account.Disconnect();notice="Disconnected. Local files were kept.";break;
@@ -96,5 +98,5 @@ await app.StartAsync();
 Console.WriteLine("Desksync Linux preview ready: "+origin+" — close the dashboard tab without stopping file sync.");
 if(!args.Contains("--no-browser"))Open(origin);
 await app.WaitForShutdownAsync();
-static void Open(string target){try{var p=new ProcessStartInfo(OperatingSystem.IsWindows()?"explorer.exe":"xdg-open"){UseShellExecute=false,CreateNoWindow=true};p.ArgumentList.Add(target);Process.Start(p);}catch{} }
+static void Open(string target){var p=new ProcessStartInfo(OperatingSystem.IsWindows()?"explorer.exe":OperatingSystem.IsMacOS()?"open":"xdg-open"){UseShellExecute=false,CreateNoWindow=true};p.ArgumentList.Add(target);Process.Start(p);}
 static class Native{[DllImport("libc",EntryPoint="umask")]internal static extern uint umask(uint mask);}

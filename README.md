@@ -2,7 +2,7 @@
 
 Your files. Your server. A desktop and server app by Afrosoftware, with encrypted synchronization powered by Syncthing. Windows desktop/server releases and Linux/macOS desktop previews are available.
 
-[Download Windows setup 0.3.0](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.3.0-win-x64.exe) · [Checksum](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.3.0-win-x64.exe.sha256) · [Software page](https://afrosoftware.com/software/desksync)
+[Download Windows setup 0.3.1](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.3.1-win-x64.exe) · [Checksum](https://afrosoftware.com/downloads/desksync/Desksync-Setup-0.3.1-win-x64.exe.sha256) · [Software page](https://afrosoftware.com/software/desksync)
 
 [Linux x64 desktop installer](https://afrosoftware.com/downloads/desksync/Desksync-0.4.0-linux-amd64.deb) · [Linux ARM64](https://afrosoftware.com/downloads/desksync/Desksync-0.4.0-linux-arm64.deb) · [Mac Apple silicon](https://afrosoftware.com/downloads/desksync/Desksync-0.4.0-mac-arm64.dmg) · [Mac Intel](https://afrosoftware.com/downloads/desksync/Desksync-0.4.0-mac-x64.dmg)
 
@@ -27,6 +27,13 @@ Screenshots from the working Windows 0.2 interface. Current releases add the liv
 | Guided setup | Folder, account and update settings |
 | --- | --- |
 | ![Choose a desktop or server in the setup wizard](docs/images/setup.jpg) | ![Desksync storage, account, startup and update settings](docs/images/settings.jpg) |
+
+## What is new in Windows 0.3.1
+
+- Click a filename in Home, Sync activity or a live transfer queue to open the local file or folder in its default app. The folder button beside it selects it in Windows Explorer. Deleted and not-yet-downloaded items show their unavailable state.
+- File and folder icons use the shell associations installed on this computer, including WinRAR archives and Chrome documents. Icons are cached locally. Other platforms keep their existing fallback icons.
+- Activity shows **Just now**, **5 minutes ago**, hours or days, updating with live status. The date remains visible; hover the time for the full timestamp. New engine events retain their original event time.
+- Native file actions are restricted to ordinary items inside the selected sync folder. Paths that escape the folder, alternate streams, device paths and symbolic links/junctions are rejected.
 
 ## What is new in 0.3
 
